@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Station Select</title>
+<script type="text/javascript" src="//ajax.googleapis.com/ajax/libs/jquery/1.11.1/jquery.min.js"></script>
+<script type="text/javascript">
+function showselection() {
+	$("#changed").text("Changed");
+	$("#selected").text($(":selected")[0].value);
+	console.log($(":selected"));
+}
+</script>
+<script type="text/javascript" src="stations.js"></script>
+</head>
+<body>
+<div id="stationdiv"></div>
+<p id="changed">Not changed</p>
+<p id="selected">What you selected<p>
+</body>
+</html>

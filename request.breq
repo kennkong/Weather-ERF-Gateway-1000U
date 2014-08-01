@@ -1,0 +1,808 @@
+<?php
+error_reporting(E_ALL);
+//----------------------------------------------------------------------------------------------------------
+// Configuration, customize for your situation
+//----------------------------------------------------------------------------------------------------------
+date_default_timezone_set('America/New_York');   // We use this to set the correct time on your weather station
+$station_serial=pack("H*" , "7fff7c1658f0be55");    // Set your station serial number here
+$ping_interval = 300; //How often gateway reports (in seconds) (set in 00:70 reply)
+$sensor_interval = chr(4); // Minutes between packets - 1
+$history_interval = chr(0x03);
+/* History interval sent in 14:01 reply
+// Byte 0x1f seem to set the history save interval:
+//   0x00 --  1 minute
+//   0x01 --  5 minutes
+//   0x02 -- 10 minutes
+//   0x03 -- 15 minutes (weatherdirect.com default) 
+//   0x04 -- 20 minutes
+//   0x05 -- 30 minutes
+//   0x06 -- 1 hour
+//   0x07 -- 2 hours (changes every even hour, local time)
+*/
+
+// Output flags													
+const OF_RTG = 0x01; // Reply to gateway
+const OF_WDB = 0x02; // Write to database
+const OF_DBG = 0x04; // Write to wstation.log file
+const OF_WUG = 0x08; // Send to Weather Underground
+const OF_LAC = 0x10; // Send to Lacrosse server
+const OF_RES = 0x30; // Send Lacrosse response instead (forces OF_LAC)
+const DBG_LVL = 1;
+$OF = OF_RTG | OF_WDB | OF_DBG | OF_WUG;
+
+function checksum8($buffer) { // Simple 8 bit checksum
+    $count=strlen($buffer);
+    $byte_array=unpack('C*',$buffer);
+    $sum=0;
+    for($i=1;$i<=$count;$i++)
+    {
+        $sum=$sum+$byte_array[$i];
+    }
+    return($sum&0xff);
+}
+function checksum16($buffer) { // Simple 16 bit checksum
+	$len=strlen($buffer);
+    $sum=0;
+    for($i=0;$i<$len;$i++)
+    {
+        $sum+=ord($buffer[$i]);
+    }
+    return($sum&0xffff);
+}
+function bcd2int($bcd) { // Convert bcd to integer
+	return intval(bin2hex($bcd));
+}
+function hex2degC($hex) { // Convert BCD string(3) 10 * (deg C + 40)
+	if (strlen($hex) != 3) return null;
+	// Check for wind chill error
+	if (0 == strcmp($hex, 'AAA')) return null;
+	return round(intval($hex)/10 - 40, 1);
+}
+function C2F($C) { // Convert deg C to deg F
+	return round($C * 1.8 + 32.0, 1);
+}
+function hex2degF($hex) { // Convert BCD string(3) in C to F
+	$C = hex2degC($hex);
+	if (!isset($C)) return null;
+	return C2F($C);
+}
+function dewpoint($t, $rh) { // Approximate dewpoint from T and RH (in deg C)
+	// Constants from wikipedia.org
+	$b = 17.67;
+	$c = 243.5;
+	$gamma = log($rh/100) + ($b * $t)/($c + $t);
+	return round(($c * $gamma)/($b - $gamma), 1);
+}
+function heatindex($t, $rh) { // T in deg F
+	//Valid for T>80 F and RH>40%
+	if ($t < 80 || $rh < 40) return $t;
+	//{HI} = c_1 + c_2 T + c_3 R + c_4 T R 
+	// + c_5 T^2 + c_6 R^2 + c_7 T^2R + c_8 T R^2 + c_9 T^2 R^2\ \, 
+	//Constants from NOAA
+	$c = [ 0, -42.379, 2.04901523, 10.14333127, -0.22475541, 
+		-6.83783E-3, -5.481717E-2, 1.22874E-3, 8.5282E-4, -1.99E-6 ];
+	$t2 = pow($t,2);
+	$rh2 = pow($rh,2);
+	$hi = $c[1] + $c[2]*$t + $c[3]*$rh + $c[4]*$t*$rh
+		+ $c[5]*$t2 + $c[6]*$rh2 + $c[7]*$t2*$rh + $c[8]*$t*$rh2 + $c[9]*$t2*$rh2;
+	return round($hi,1);
+}
+function updatelog($message, $level = 1) { // Write to wstation.log
+	global $OF;
+	if ($level > DBG_LVL || !($OF & OF_DBG)) return;
+	file_put_contents('wstation.log', $message, FILE_APPEND);
+}
+function wdb() { // Create database connection
+	global $wdb;
+	$wdb = null; // Close any existing connection
+	try {
+		$wdb = new PDO('mysql:dbname=weather');
+	} catch (PDOException $e) {
+		updatelog("wdb connect error: ".$e->getMessage(), 0);
+		return false;
+	}
+	return true;
+
+}
+function getstation($mac) {
+	global $wdb, $station;
+	if (!isset($wdb)) if (!wdb()) return false;
+	try {
+		$pds = $wdb->query("SELECT * FROM `stations` WHERE `mac` = '$mac'");
+	} catch (PDOException $e) {
+		updatelog("Failed to get station info ".$e->getMessage()."\n", 0);
+		return false;
+	}
+	if (!$station = $pds->fetch(PDO::FETCH_ASSOC)) return false;
+	$pds->closeCursor();
+	return true;
+}
+function updatepkt($packettype) { // Saves packet data, returns packet id
+	global $wdb, $id1, $id2, $postdata, $stationid;
+	if (!isset($wdb)) if (!wdb()) return null;
+	
+	$http_id_short = $id1.':'.$id2;
+
+	// INSERT INTO packets stationid, timestamp, packettype values(55,now(),2);
+	$sql = 'INSERT INTO `packets` (`stationid`, `timestamp`, `packettype`)'
+		." VALUES($stationid, NOW(), $packettype)";
+	//updatelog($sql."\n", 2);
+	try {
+		$wdb->exec($sql);
+	} catch (PDOException $e) {
+		updatelog("Insert packet: ".$e->getMessage(), 0);
+		return null;
+	}
+	$pid = $wdb->lastInsertId();
+	if ($pid == 0) {
+		updatelog("Bad PID\n", 0);
+		return null;
+	}	
+	
+	// Update the hourly table
+	if ($packettype == 2) {
+		$wdb->exec("INSERT INTO `hourly`
+		SET stations_id = $stationid, 
+		midnight = TO_DAYS(NOW()), 
+		`hour` = HOUR(NOW()),
+		packets_id = $pid");
+	}
+	
+	// We already have the data for the history packets
+	if ($packettype == 9) return $pid;
+	
+	$sql = 'INSERT INTO `packetdump` (pid, http_id, payload, packettype)'
+		.' VALUES(?, ?, ?, ?)';
+	try {
+		$pds = $wdb->prepare($sql);
+		$pds->bindParam(1, $pid, PDO::PARAM_INT);
+		$pds->bindParam(2, $http_id_short);
+		$pds->bindParam(3, $postdata);
+		$pds->bindParam(4, $packettype, PDO::PARAM_INT);
+		$pds->execute();
+	} catch (PDOException $e) {
+		// This isn't fatal
+		updatelog("Insert packetdump: ".$e->getMessage(), 0);
+	}
+	// Leave connection open
+	return $pid;
+}
+function fixuprain($pid) { // Fix up weekly and monthly rainfall to be running totals
+	global $wdb, $sdp, $stationid;
+	// Check to see if the last rain reset date was reset in this packet
+	$sql = "SELECT MAX(`date`) as lrr FROM `v_packets_sensordatevalues` 
+	WHERE did = 1 AND stationid = $stationid";
+	try {
+		$pds = $wdb->query($sql);
+		$pds->bindColumn(1, $dts);
+		$pds->fetch(PDO::FETCH_BOUND);
+		$dt_lrr = new DateTime($dts);
+		updatelog("Last rain reset from db: ".$dt_lrr->format('Y-m-d H:i:s')."\n",2);
+		$pds->closeCursor();
+	} catch (PDOException $e) {
+		updatelog("Select rain reset:".$e->getMessage(),0);
+		$dt_lrr = $sdp['dt_last_rain_reset'];
+	}
+	if ($dt_lrr->getTimestamp() < $sdp['dt_last_rain_reset']->getTimestamp()) {
+		updatelog("Rain total date has been reset\n", 1);
+		$dt_lrr = $sdp['dt_last_rain_reset'];
+		
+		// Get prior value
+		$prior_value = 0;
+		$sql = "
+		SELECT timestamp, value FROM v_packets_sensorvalues
+		WHERE sid = 9 AND stationid = $stationid
+		AND timestamp <'".$dt_lrr->format('YmdHis')."'
+		ORDER by timestamp desc LIMIT 1
+		";
+		try {
+			$pds = $wdb->query($sql);
+			$pds->bindColumn(2, $prior_value);
+			$pds->fetch(PDO::FETCH_BOUND);
+			$pds->closeCursor();
+		} catch (PDOException $e) {
+			updatelog("Failed to retrieve prior rain total: ".$e->getMessage."\n", 0);
+		}
+		
+		$sql = "INSERT INTO `sensordatevalues` (`pid`, `did`, `date`, `prior_value`)"
+			." VALUES ($pid, 1, '".$dt_lrr->format('YmdHis')."', $prior_value";
+		try {
+			$wdb->exec($sql);
+		} catch (PDOException $e) {
+			updatelog("Insert last rain reset:".$e->getMessage()."\n", 0);
+		}
+	}
+	$sdp['prev_week_rain'] = $sdp['cur_rain_reset'] - prev_days_rain(7);
+	updatelog("prev_week_rain = ".$sdp['prev_week_rain']."\n", 2);
+	$sdp['prev_mo_rain'] = $sdp['cur_rain_reset'] - prev_days_rain(30);
+	updatelog("prev_mo_rain = ".$sdp['prev_mo_rain']."\n", 2);
+}
+function prev_days_rain($days) {
+	global $wdb;
+	// Get previous week's rain total
+	$sql = "SELECT P.id, SV.value"
+		." FROM packets P JOIN sensorvalues SV ON P.id = SV.id"
+		." WHERE P.timestamp < DATE_SUB(NOW(), INTERVAL $days DAY)"
+		." AND SV.sid = 9"
+		." ORDER by P.id desc LIMIT 1";
+	try {
+		$pds = $wdb->query($sql);
+		$pds->bindColumn(1, $prior_pid);
+		$pds->bindColumn(2, $prior_value);
+		$pds->fetch(PDO::FETCH_BOUND);
+		$pds->closeCursor();
+	} catch (PDOException $e) {
+		updatelog("Failed to retrieve prior week's rain total: ".$e->getMessage()."\n", 0);
+	}
+	// Get rain totals from intervening resets, if any
+	$sql = "SELECT SUM(`prior_value`) as inter_rain"
+		." FROM sensordatevalues WHERE `pid` > $prior_pid"
+		." AND did = 1";
+	try {
+		$pds = $wdb->query($sql);
+		$pds->bindColumn(1, $inter_rain);
+		$pds->fetch(PDO::FETCH_BOUND);
+		if (!isset($inter_rain)) $inter_rain = 0;
+	} catch (PDOException $e) {
+		updatelog("Failed to retrieve prior rain totals: ".$e->getMessage()."\n", 0);
+	}
+	return $prior_value - $inter_rain;
+}
+function updatesdp() { // Update weather database with sensor data
+	global $wdb, $sdp, $id1, $id2, $postdata;
+	$pid = updatepkt(2); // This leaves the connection open
+	if (!isset($pid)) return;
+
+	fixuprain($pid);
+	
+	$sql = 'INSERT INTO `sensorvalues` (id, sid, value)'
+		.' VALUES (?, ?, ?)';
+	// Trigger will update the records table
+	try {
+		$pds = $wdb->prepare($sql);
+		$pds->bindParam(1, $pid, PDO::PARAM_INT);
+		$pds->bindParam(2, $sid, PDO::PARAM_INT);
+		$pds->bindParam(3, $value);
+		
+		// Execute with:
+		foreach ( [
+			[ 2, $sdp['cur_in_temp']],
+			[ 3, $sdp['cur_in_hum']],
+			[ 4, $sdp['cur_out_temp']],
+			[ 5, $sdp['cur_out_hum']],
+			[ 6, $sdp['cur_pres_hg']],
+			[ 7, hexdec(bin2hex($sdp['wind_dir_last6'])[0]) * 22.5],
+			[ 8, $sdp['cur_wind_speed']],
+			[ 9, $sdp['cur_rain_reset']],
+			[ 10, $sdp['cur_rain_hour']],
+			[ 11, $sdp['cur_rain_day']],
+			[ 12, $sdp['prev_week_rain']],
+			[ 13, $sdp['prev_mo_rain']],
+			[ 14, $sdp['cur_wind_chill']],
+			[ 15, $sdp['max_gust_cycle']],
+			[ 16, $sdp['dewpoint']],
+			] as list($sid, $value)) {
+			$pds->execute();
+			if ($pds->errorCode() > 0) {
+				updatelog("Insert pid $pid sid $sid value $value\n", 0);
+				updatelog(print_r($pds->errorInfo(), true)."\n", 0);
+			}
+		}
+	} catch (PDOException $e) {
+		updatelog("Insert sensorvalue: ".$e->getMessage(), 0);
+	}
+	$pds->closeCursor();
+	
+	$wdb = null;
+}
+function updatehis() { // Update weather database with history data
+	global $wdb, $postdata, $OF, $stationid;
+	if (!isset($wdb)) if (!wdb()) return;
+	$pid = updatepkt(8);
+	if (!isset($pid)) return;
+	
+	$spid = $pid; // Save the packetid
+	updatelog(" Header: ".bin2hex(substr($postdata, 0, 8))."\n", 2);
+	for ($i = 8; $i < strlen($postdata) - 4; $i+=18) {
+		$histdata = bin2hex(substr($postdata, $i, 18));
+		$timestamp = substr($histdata, 26, 10);
+		// Check to see if we've seen this one before
+		$sql = "SELECT * FROM packets WHERE packettype = 9 and timestamp = '$timestamp'";
+		$pds2 = $wdb->query($sql);
+		if ($pds2->fetch()) { 
+			$pds2->closeCursor();
+			updatelog("Skipping ".$timestamp."\n", 2);
+			continue; 
+		}
+		$sql = 'INSERT INTO `packets` (`stationid`, `timestamp`, `packettype`)'
+			." VALUES($stationid, '$timestamp', 9)";
+		try {
+			$pds3 = $wdb->query($sql);
+			$spid = $wdb->lastInsertId();
+		} catch (PDOException $e) {
+			updatelog("Insert packet: ".$e->getMessage(), 0);
+			continue;
+		}
+		$sql = 'INSERT INTO `sensorvalues` (id, sid, value)'
+			.' VALUES (?, ?, ?)';
+		try {
+			$pds3 = $wdb->prepare($sql);
+			$pds3->bindParam(1, $spid, PDO::PARAM_INT);
+			$pds3->bindParam(2, $sid, PDO::PARAM_INT);
+			$pds3->bindParam(3, $value);
+			// Execute with:
+			foreach ( [
+				[ 17, intval(substr($histdata, 0, 3))/100], // Current rain hour (mm)
+				[ 7, hexdec($histdata[4]) * 22.5], // Wind direction (degrees)
+				[ 15, hexdec(substr($histdata, 5, 3))/100], // Wind gust speed (kph)
+				[ 8, hexdec(substr($histdata, 8, 3))/100], // Wind speed (kph)
+				[ 5, intval(substr($histdata, 11, 2))], // Outside RH (%)
+				[ 3, intval(substr($histdata, 13, 2))], // Inside RH (%)
+				//[ 6, intval(substr($histdata, 15, 5))], // Current pressure (mbar) I use inHg
+				[ 4, C2F(intval(substr($histdata, 20, 3))/10 - 40)], // Outside temp
+				[ 2, C2F(intval(substr($histdata, 23, 3))/10 - 40)],
+				] as list($sid, $value)) {
+				$pds3->execute();
+			}
+		} catch (PDOException $e) {
+			updatelog("Insert sensorvalue: ".$e->getMessage(), 0);
+		}
+		updatelog("Added ".$histdata."\n", 2);
+	}
+	updatelog("Trailer: ".bin2hex(substr($postdata, strlen($postdata) - 4, 4))."\n", 2);
+	if ($spid == $pid) { // We didn't add any new subpackets, drop the packet
+		// The packetdump packet is deleted by the foreign key constraint
+		$sql = "DELETE FROM packets WHERE id = $pid";
+		try {
+			$rows = $wdb->exec($sql);
+		} catch (PDOException $e) {
+			$sql.="\nFAILED ".$e->getMessage();
+		}
+		updatelog($sql." $rows rows deleted\n", 2);
+	}
+}
+function set_last_hist_addr($last_hist_addr) { // Last memory location of history record
+	global $wdb, $stationid;
+	if (!isset($wdb)) if (!wdb()) return;
+	try {
+		$wdb->exec("UPDATE `stations` SET last_hist_addr = '$last_hist_addr'
+		WHERE id = $stationid");
+	} catch (PDOException $e) {
+		updatelog("Failed to update last history address: ".$e->getMessage()."\n",0);
+	}
+
+}
+function updatewug() { // Update weatherunderground.com
+	global $sdp, $station;
+	if (is_null($station['wug_id'])) return;
+	
+	$url = "http://weatherstation.wunderground.com";
+	$url.= "/weatherstation/updateweatherstation.php?";
+	$url.="ID=".$station['wug_id'];
+	$url.="&PASSWORD=".$station['wug_sec'];
+	$url.="&action=updateraw";
+	$url.="&softwaretype=phpKennKong";
+	// timestamp is local, WUG wants UTC
+	$timestamp = $sdp['timestamp']->setTimeZone(new DateTimeZone('UTC'));
+	$url.="&dateutc=".rawurlencode($timestamp->format("Y-m-d H:i:s"));
+	$url.="&winddir=".hexdec($sdp['wind_dir_last6'][0]) * 22.5;
+	$url.="&windspeedmph=".round($sdp['cur_wind_speed']/1.619, 1);
+	$url.="&windgustmph=".round($sdp['max_gust_cycle']/1.619, 1);
+	$url.="&tempf=".$sdp['cur_out_temp'];
+	$url.="&humidity=".$sdp['cur_out_hum'];
+	$url.="&dewptf=".$sdp['dewpoint'];
+	$url.="&baromin=".$sdp['cur_pres_hg'];
+	$url.="&rainin=".round($sdp['cur_rain_hour']/25.6, 2);
+	$url.="&dailyrainin=".round($sdp['cur_rain_day']/25.6, 2);
+	
+	updatelog("WUG url: ".$url."\n", 2);
+	if ($handle = fopen("$url", "r")) {
+		$response = fread($handle, 1024);
+		fclose($handle);
+	} else {
+		$response = "URL open failed\n";
+	}
+	updatelog("WUG response: ".$response, 1);
+}
+function updatelac() { // Relay data to Lacrosse server
+	global $postdata, $http_id;
+	$opts = array('http' =>
+		array(
+			'method'  => 'PUT',
+			'protocol_version' => 1.1,
+			'header'  => array(
+				"Host: box.weatherdirect.com",
+				"Connection: close",
+				"HTTP_IDENTIFY: $http_id",
+				"Content-Type: application/octet-stream",
+				"Content-Length: ".strlen($postdata)
+				),
+			'content' => $postdata
+		)
+	);
+
+	$context = stream_context_create($opts);
+
+	$result = file_get_contents('http://box.weatherdirect.com/request.breq', false, $context);
+	if ($result === FALSE) return array('NO FLAGS', '');
+	foreach ($http_response_header as $i => $header) {
+		if (strpos($header, 'HTTP_FLAGS:') !== false) break;
+	}
+	return array( isset($i) ? $http_response_header[$i] : 'NO FLAGS', $result);
+}
+if( !function_exists('apache_request_headers') ) {
+function apache_request_headers() {
+  $arh = array();
+  $rx_http = '/\AHTTP_/';
+  foreach($_SERVER as $key => $val) {
+    if( preg_match($rx_http, $key) ) {
+      $arh_key = preg_replace($rx_http, '', $key);
+      $rx_matches = array();
+      // do some nasty string manipulations to restore the original letter case
+      // this should work in most cases
+      $rx_matches = explode('_', $arh_key);
+      if( count($rx_matches) > 0 and strlen($arh_key) > 2 ) {
+        foreach($rx_matches as $ak_key => $ak_val) $rx_matches[$ak_key] = ucfirst($ak_val);
+        $arh_key = implode('-', $rx_matches);
+      }
+      $arh[$arh_key] = $val;
+    }
+  }
+  return( $arh );
+}
+}
+//--------------------------------------------------------------------------------------------------------------
+// Packet processing begins here:
+//--------------------------------------------------------------------------------------------------------------
+$postdata = file_get_contents("php://input");
+$headers = apache_request_headers();
+updatelog(print_r($_SERVER, true), 2);
+// Get the Identify
+$http_id=@$headers["HTTP-IDENTIFY"];
+if ($http_id) {
+	list($mac, $id1, $key, $id2) = explode(":", $http_id);
+	// Reject packets from other stations
+	if (getstation($mac)) {
+		$stationid = $station['id'];
+		$station_serial = pack('H*', $station['station_serial']);
+	} else {
+		updatelog("Unknown station $http_id\n", 0);
+		exit;
+	}
+} else {
+	$id1="XX"; $id2="XX"; $reply="<html><body>Couldn't stand the weather!</body></html>";
+}
+
+
+// Exclude packets from log here
+switch ($id1.":".$id2) :
+	case "01:01": 
+		if (strlen($postdata) == 197) break; //Comment out to skip SDP
+		if (strlen($postdata) != 197) break; //Comment out to skip history
+	case "00:10":
+	//case "01:00":
+	//case "00:70": 
+		$OF &= ~OF_DBG;
+endswitch;
+// Log it
+updatelog(date("Y-m-d H:i:s")." $http_id"
+	. ((strlen($postdata) == 0) ? "\n" : 
+	("\npostdata(".strlen($postdata)."): ".bin2hex($postdata)."\n"))
+	, 1);
+
+//
+// Check request and do the appropriate reply
+//
+$http_flags='00:00';
+switch ($id1.":".$id2) :
+	case "00:10":	{ // Power Up Packet for unregistered gateway (00:01)
+		// Ww should use this to notify user server configuration is OK
+
+		// Just reply with 10:00
+		$http_flags='10:00';
+		$reply="";
+	}	break;
+	case "00:20":	{ // Push button Registration Packet (00:02)  
+		// When the button is pushed on the gateway and it is unregistered it will send this packet
+		// We can then reply to this packet with registration information.   We send a transformation key and it uses this and the default
+		// gateway key to generate a new key that will be used in the future.  I do not know how the transformation works, but it doesn't matter
+		// you can just store it and recognize it, or ignore it and just use the MAC serial number.
+		//
+		
+		// I try to put my own server in here, but it doesn't seem to matter or update anything
+		$weather_server="box.weatherdirect.com";                           // So far this doesn't seem to matter
+
+		// Likely we should check the MAC and only register it if we have set it in motion somehow
+		// Unregistered packet, do we need to register this one?
+		// Check $mac against registration pending.
+
+
+		// This is the key that is used to transform the default registration code to the new one, I don't know the transform, so I
+		// Just use all zeros.  Likely we can capture a bunch of key+zeros=transform and figure it out.
+		//
+		// We retply with 20:00 and config:
+		// 1st 8 b
+		$new_key=str_pad("", 8, chr(0));       // This is used to generate new key
+																				// no idea on transform, so use zeros, if everyone
+																				// uses zeros, maybe we can collect enough data
+																				// to figure out transform.
+		$new_server=str_pad($weather_server, 0x98 , chr(0));                    // Length 0x98
+		$new_server2=str_pad($weather_server.chr(0).$weather_server,0x56, chr(0)); // set the weather server, doesn't seem to matter
+		$end=chr(0).chr(0).chr(0).chr(0).chr(0).chr(0xff);
+
+		$reply=$new_key.$new_server.$new_server2.$end;
+
+		$http_flags='20:00';                        // Also seen reply 20:01 maybe when it is already registered?
+															// To detect this we would likely have to know the transform, or
+															// how to tell if it has been transformed, or keep track after transform
+
+	}	break;
+	case "00:30":	{ // got this after the 00:70 packet was responded to, I think you must ack this packet for config to stick.
+		$http_flags='30:00';
+	}	break;
+	case "00:70":	{ // Gateway Ping? Data seems to be controling frequency of packets
+		$http_flags='70:00';
+		// 18 byte reply, last two are ping interval in seconds
+		// Pace in seconds of (00:70) packet request, msb first. IE chr(0).chr(10) would be 10 seconds
+		// chr(0).chr(0xf0) = 240 seconds (this seems to be default)
+		$reply=str_pad(chr($ping_interval >> 8).chr($ping_interval % 0xff), 18, chr(0), STR_PAD_LEFT);
+	}	break;
+	case "7F:10":	{ // This is the first packet that WS send to register itself
+		// Don't reply to this packet unless we have decided it is OK
+		$do_reply=false;
+		// It specifies its serial number as the first 8 digits of the packet, if
+		// the serial number is default, it
+		// there should be 13 bytes of ID data on request
+		// First parse out the incoming serial number
+		//
+		// convert the post data to an ascii representation
+		$asc_data=bin2hex($postdata);
+			   
+		// Get the serial number from the request data
+		$serial_number=substr($postdata,0,8);
+
+	   // Check if this is the default serial number
+		if(0==strcmp($serial_number,pack("H*" , "0102030405060708")))
+		{
+			// Default Serial Number, refuse it OR check if we need to match it and set a new serialnumber
+		   // we should set a new serial number only if the user wants one, really though it should be done
+		   // by lacrosse alerts.
+		   $do_reply=false;
+		
+		}
+		else 
+		{
+			// For now do not reply unless it is the one we are interested in
+			$do_reply=(0==strcmp($serial_number,$station_serial));
+		}
+		
+		if($do_reply)
+		{
+
+			// Reply with 14:00 and 38 bytes of data.  This data is likely configuatio of the WS
+			$http_flags='14:00';
+			//
+			// Important, the reply packet 14:00 can set the serial number of the weather station if the weather station has
+			// default serial number, ie 01 02 03 04 05 06 07 08.  It doesn't seem to be resettable after it has been changed
+			// the first time, so it might be advisable to register with the Lacrosse server first to get a good serial number
+			// written, so if you ever wanted to go back to lacrosse service you could.
+			//
+			// If the device has a serial number, then it must match below or this packet is ignored.  The same holds true
+			// for below, if you don't populate the correct serial number then the internet display on the weather station 
+			// will not light.
+			//
+			//
+			$reply =chr(1);                                                             // Seems to be always 1
+			// if we have a valid serial number in the request, stuff it here:
+			$reply.=$station_serial;
+			$reply.=chr(0).chr(0x30).chr(0).chr(0xf).chr(0x00).chr(0x0).chr(0x00);    // ?
+			$reply.=chr(0xf).chr(0).chr(0x0).chr(0).chr(0x77).chr(0x0);				// ?
+
+			$reply.=chr(0xe).chr(0xff);                                          // Skydiver calls this Ephoch, I do nothing here
+
+			$reply.=pack('H*',date('hisdmy'));
+			$reply.=chr(0x53);																// unknown Server DateTime
+	  
+			$reply.=chr(0x7);										// Unknown
+			$reply.=chr(0x5);                                       // LCD brightness this value+1 = value on display settings
+			$reply.=chr(0x0).chr(0x0);							    // (word) beep weather station on this packet reply on internet update >0, nobeep=0 (?what else)
+			$reply.=chr(0x0);										// Unknown
+			$reply.=chr(0x07);										// Unknown (is 0x7 on lacrosse alerts)
+			// Checksum
+			$reply=$reply.chr(checksum8($reply));
+		}
+
+	}	break;
+	case "00:14":	{ // Got this right after the 7F:10
+		// send 14 bytes of data, I think this reply is needed to "seal the deal" on registration
+
+		$http_flags='1C:00';
+		$reply="";
+	}	break;
+	case "01:14":	{ // This sends 14 bytes of data with no reply
+		// the data is the new serial number in the same format as 7F:10 except for one
+		// extra byte on end
+		
+		$http_flags='1C:00';
+		$reply="";
+	}	break;
+	case "01:00":	{ // Weather Station Ping Packet
+		// reply to this packet keeps the Weather Station Happy and time Synced.
+		//
+		// This sends 5 bytes of data, and is responded to by 38 bytes of data, we do not do anything with the 5 bytes of data
+		// The weather station sends
+		//
+		updatepkt(1);  // Don't care about the return pid
+		$http_flags='14:01';
+		//
+		// Reply should be same as above 38 byte packet
+		//
+		/*
+		*/
+		// I'm just copying the response I'm getting from Lacrosse
+		$reply = chr(0x01); // Always 1
+		$reply.= $station_serial; // 8 bytes
+		$reply.= pack('H*','0032000b0000000f000000'); // 11 bytes
+		$reply.= $sensor_interval; // byte 0x14
+		$reply.= chr(0);
+		$reply.= pack('H*',$station['last_hist_addr']); // 2 bytes
+		$reply.= pack('H*',date('Hisdmy')); // 6 bytes
+		$reply.= chr(0x53);	// Always 0x53?															// unknown Server DateTime
+		$reply.= $history_interval;	// byte 0x1f History interval
+		/*
+		$reply.=chr(0x4);   // LCD brightness this value+1 = value on display settings
+		$reply.=chr(0x0).chr(0x0); // (word) beep weather station on this packet reply on internet update >0, nobeep=0 (?what else)
+		$reply.=chr(0x0);		// Unknown
+		*/
+		$reply.= pack('H*','04000000');
+		// End the packet with a big-endian 2-byte sum of the previous bytes, with an offset of 7
+		$csum=checksum16($reply)+7;
+		// This is the real checksum
+		$reply.=chr($csum>>8).chr($csum&0xff);
+	}	break;
+	case "01:01":	{ // Sensor data or history packet
+		if(strlen($postdata) == 197) { // Sensor data packet
+			// We should checksum the packet here before decode.
+			$posthex = bin2hex($postdata);
+			$sdp = [
+				"timestamp" => date_create(), // This will be in local time
+				"record_type" => bin2hex($postdata[0]), // Always 01
+				"rf_signal_strength" => hexdec($postdata[1]), // RF signal strength in %
+				"status" => bin2hex($postdata[2]),  // Varies among 0x10, 0x20, and 0x30
+				"forecast" => bin2hex($postdata[3]), // ? varies among 0x11, 0x12, 0x20, 0x21
+				"u_n1" => substr($posthex, 8, 1), //always 0 u_n's end on even nybbles
+				"dt_max_in_temp" => DateTime::createFromFormat('ymdHi', substr($posthex, 9, 10)), //BCD YYMMDDhhmm
+				"dt_min_in_temp" => DateTime::createFromFormat('ymdHi', substr($posthex, 19, 10)),
+				"max_in_temp" => hex2degF(substr($posthex, 29, 3)), // BCD 400 + .1C
+				"u_b1" => bin2hex($postdata[16]), // always 0 u_b's end on bytes (odd nybbles)
+				"min_in_temp" => hex2degF(substr($posthex, 34, 3)),
+				"u_b2" => substr($posthex, 37, 2), //always 0
+				"cur_in_temp" => hex2degF(substr($posthex, 39, 3)),
+				"u_t1" => hex2degF(substr($posthex, 42, 3)), //same size as temp
+				"dt_max_out_temp" => DateTime::createFromFormat('ymdHi', substr($posthex, 45, 10)),
+				"dt_min_out_temp" => DateTime::createFromFormat('ymdHi', substr($posthex, 55, 10)),
+				"max_out_temp" => hex2degF(substr($posthex, 65, 3)),
+				"u_b2" => bin2hex($postdata[34]), //always 0
+				"min_out_temp" => hex2degF(substr($posthex, 70, 3)),
+				"u_b3a" => substr($posthex, 73, 2), //always 0
+				"cur_out_temp" => hex2degF(substr($posthex, 75, 3)), //0xAA3 on error
+				"u_b3" => bin2hex($postdata[39]), //always 0
+				"u_n2" => substr($posthex, 80, 1),//Unknown BCD digit, changes often
+				"dt_hist_max_temp" => DateTime::createFromFormat('ymdHi', substr($posthex, 81, 10)), // all-time high?
+				"dt_hist_min_temp" => DateTime::createFromFormat('ymdHi', substr($posthex, 91, 10)), // all-time low?
+				"hist_max_temp" => hex2degF(substr($posthex, 101, 3)), //all-time high?
+				"u_b4" => bin2hex($postdata[52]), //always 0
+				"hist_min_temp" => hex2degF(substr($posthex, 106, 3)), //all-time low?
+				"u_b5" => substr($posthex, 109, 2), //always 0
+				"cur_wind_chill" => hex2degF(substr($posthex, 111, 3)), //0xAAA if error
+				"wind_chill_status" => substr($posthex, 114, 1), // 0 if OK, 0xA if error
+				"u_n3" => substr($posthex, 115, 1), // always 0
+				"dt_max_in_hum" => DateTime::createFromFormat('ymdHi', substr($posthex, 116, 10)),
+				"dt_min_in_hum" => DateTime::createFromFormat('ymdHi', substr($posthex, 126, 10)),
+				"max_in_hum" => bcd2int($postdata[68]), //percent
+				"min_in_hum" => bcd2int($postdata[69]),
+				"cur_in_hum" => bcd2int($postdata[70]),
+				"dt_max_out_hum" => DateTime::createFromFormat('ymdHi', substr($posthex, 142, 10)),
+				"dt_min_out_hum" => DateTime::createFromFormat('ymdHi', substr($posthex, 152, 10)),
+				"max_out_hum" => bcd2int($postdata[81]),
+				"min_out_hum" => bcd2int($postdata[82]),
+				"cur_out_hum" => bcd2int($postdata[83]),
+				"u_b6" => substr($posthex, 168, 16), //always 0
+				"prev_mo_rain" => intval(substr($posthex, 184, 7))/1000,
+				"u_n4" => substr($posthex, 191, 15), //always 0
+				"prev_week_rain" => intval(substr($posthex, 206, 6))/100,
+				"dt_max_rain_day" => DateTime::createFromFormat('ymdHi', substr($posthex, 212, 10)),//end of max rain in 24 hrs?
+				"max_rain_day" => intval(substr($posthex, 222, 6))/100, //max rain in 24 hrs?
+				"cur_rain_day" => intval(substr($posthex, 228, 6))/100, // in .01mm
+				"dt_max_rain_hour" => DateTime::createFromFormat('ymdHi', substr($posthex, 234, 10)), //end of max rain in 1 hr?
+				"max_rain_hour" => intval(substr($posthex, 244, 6))/100, // in .01mm
+				"cur_rain_hour" => intval(substr($posthex, 250, 6))/100,
+				"u_n5" => substr($posthex, 256, 1), //always 0
+				"dt_last_rain_reset" => DateTime::createFromFormat('ymdHi', substr($posthex, 257, 10)),
+				"cur_rain_reset" => intval(substr($posthex, 267, 7))/1000, // rain since last reset in .001mm
+				"dt_last_heavy_rain" => DateTime::createFromFormat('ymdHi', substr($posthex, 274, 10)), //date of last heavy rain?
+				"u_b7" => substr($posthex, 284, 6), //always 0, maybe amount of last heavy rain?
+				"cur_wind_speed" => hexdec(substr($posthex, 290, 4))/100, //unsigned int in .01km/h
+				"u_n6" => substr($posthex, 294, 3), //always 0x005
+				"wind_speed_status" => substr($posthex, 297, 1), // 0 if OK, 5 if error
+				"wind_dir_last6" => substr($posthex, 298, 6), //wind dir last 6 time periods newest to oldest
+				//wind dir from 0x0 to 0xf clockwise from N (every 22.5 deg)
+				"dt_max_gust_reset" => DateTime::createFromFormat('ymdHi', substr($posthex, 304, 10)),
+				"max_gust_reset" => hexdec(substr($posthex, 314, 4))/100, // word in .01km/h
+				"u_b8" => substr($posthex, 318, 2), //always 0
+				//"wind_gust_status" => substr($posthex, 320, 1), // 0 = OK, 5 = error
+				"max_gust_cycle" => hexdec(substr($posthex, 320, 4))/100, // word in .01km/h
+				"u_b8a" => substr($posthex, 324, 4), // always 0x0010
+				"wind_dir_last6_again" => substr($posthex, 328, 6),
+				"u_n8" => substr($posthex, 334, 1), //always 0
+				"cur_pres_hg" => intval(substr($posthex, 335, 4))/100, // Current pressure in Hg
+				"cur_pres_mb" => intval(substr($posthex, 339, 5))/10, // Current pressure in mb
+				"u_n9" => substr($posthex, 344, 1), //always 0
+				"min_pres_hg" => intval(substr($posthex, 345, 4))/100, // Min pressure in Hg
+				"min_pres_mb" => intval(substr($posthex, 349, 5))/10, // Min pressure in mb
+				"u_n10" => substr($posthex, 354, 1), //always 0
+				"max_pres_hg" => intval(substr($posthex, 355, 4))/100, // Max pressure in Hg
+				"max_pres_mb" => intval(substr($posthex, 359, 5))/10, // Max pressure in mb
+				"dt_min_pres" => DateTime::createFromFormat('ymdHi', substr($posthex, 364, 10)), // D/T of min pressure
+				"dt_max_pres" => DateTime::createFromFormat('ymdHi', substr($posthex, 374, 10)), // D/T of max pressure
+				"u_n11" => substr($posthex, 384, 1), // Unknown always 0
+				"u_n12" => substr($posthex, 385, 3), // Unknown possible temp
+				"u_b9" => substr($posthex, 388, 2), // Unknown varies from 0x03 and 0x07
+				"checksum" => substr($posthex, 390, 4), // Checksum?
+				"dewpoint" => C2F(dewpoint(hex2degC(substr($posthex, 75, 3)), bcd2int($postdata[83]))), // Must be calculated
+				];
+				$sdp['cur_wind_chill'] = heatindex($sdp['cur_out_temp'], $sdp['cur_out_hum']);
+				updatelog(print_r($sdp, true), 2);
+				if ($OF & OF_WDB) updatesdp();
+				if ($OF & OF_WUG) updatewug($sdp);
+			} else {
+				if (0 == ((strlen($postdata) - 12) % 18)) { // History packet?
+					updatehis();
+					set_last_hist_addr(bin2hex(substr($postdata, 4, 2)));
+				}
+			}
+	 
+	   // Reply with 00:00 no data    
+	   $http_flags='00:00';
+	   $reply="";
+	}	break;
+	case "XX:XX": // Not a weather station
+		$http_flags = "XX:XX";
+		break;
+	default:
+		// Reply with 00:00 no data
+		$http_flags='00:00';
+		$reply="";
+endswitch;
+
+
+//-----------------------------
+//All output created here
+//-----------------------------
+// Log it
+updatelog("HTTP_FLAGS: ".$http_flags." My reply(".strlen($reply)."): ".bin2hex($reply)."\n", 2);
+
+// Send to Lacrosse server for comparison
+if ($OF & OF_LAC) {
+	list($http_flags, $response) = updatelac();
+	// Highlight differences in response
+	for ($i = 0; $i < strlen($response); $i++) {
+		if ($response[$i] == $reply[$i]) $response[$i]='.';
+	}
+	updatelog("$http_flags response(".strlen($response)."): ".bin2hex($response)."\n", 1);
+}
+// When things get wacky, try sending the Lacrosse response instead
+if ($OF & OF_RES) $reply = $response;
+
+if ($OF & OF_RTG) {
+	header('Server: Microsoft-II/8.0');
+	header('X-Powered-By: ASP.NET');
+	header('X-AspNet-Version: 2.0.50727');
+	header('Cache-Control: private');
+	header('HTTP_FLAGS: '.$http_flags);
+	header('Content-Type: application/octet-stream');
+	if (0==strcmp($id1,"XX")) header('Content-Type: text/html');
+	header('Content-Length: '.strlen($reply));
+
+	echo("$reply");
+}

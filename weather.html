@@ -1,0 +1,167 @@
+<!DOCTYPE HTML>
+<html>
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+		<meta http-equiv="refresh" content="300">
+        <title>Hot Weather</title>
+
+        <script type="text/javascript" src="//ajax.googleapis.com/ajax/libs/jquery/1.11.1/jquery.min.js"></script>
+	 <script type="text/javascript" src="//code.highcharts.com/stock/highstock.js"></script>
+<script type="text/javascript">// Utility functions
+function mytimeformat(d) {
+	var ds = d.toLocaleTimeString();
+	return ds.match(/[0-9]{1,2}:[0-9]{2}/)+' '+ds.match(/[AP]M/);
+}
+</script>
+<script type="text/javascript" src="current.js">//Current</script>
+<script type="text/javascript" src="temperature.js">//Temperature</script>
+<script type="text/javascript" src="humidity.js">//Humidity</script>
+<script type="text/javascript" src="rainfall.js">//Rainfall</script>
+<script type="text/javascript" src="rainlong.js">//Historical rain</script>
+<script type="text/javascript" src="windchart.js">//Wind</script>
+<script type="text/javascript" src="pressure.js">//Pressure</script>
+<style>
+div#current {
+	max-width: 800px;
+	margin: auto;
+}
+table.outertable {
+	border-collapse: collapse;
+}
+table.outertable, table.innertable {
+	border-style: solid;
+	border-width: medium;
+	width: 100%;
+}
+div.history {
+	max-width: 800px; 
+	height: 350px; 
+	margin: 0 auto
+}
+</style>
+</head>
+<body>
+<div id="current">
+	<h1>Weather Data as of <span id="currenttime">Last reading</span></h1>
+	<table id="currentdata" class="outertable">
+	<tr id="curtemps">
+		<td>
+		<table id="instemp" class="innertable">
+		<tr class="innertableheading">
+			<td>Inside</td><td>T(F)</td><td id="insidet"></td>
+		</tr>
+		<tr><td id="blank">&nbsp;</td></tr>
+		<tr><td id="blank">&nbsp;</td></tr>
+		<tr>
+			<td>High</td><td id="dt_max_in_temp"><td id="max_in_temp"></td></td>
+		</tr>
+		<tr>
+			<td>Low</td><td id="dt_min_in_temp"><td id="min_in_temp"></td></td>
+		</tr>
+		</table>
+		</td>
+		<td>
+		<table id="outtemp" class="innertable">
+		<tr class="innertableheading">
+			<td>Outside</td><td>T(F)</td><td id="outsidet"></td>
+		</tr>
+		<tr><td>Dewpoint</td><td></td><td id="dewpoint"></td></tr>
+		<tr><td>Feels Like</td><td></td><td id="feelslike"></td></tr>
+		<tr>
+			<td>High</td><td id="dt_max_out_temp"></td><td id="max_out_temp"></td>
+		</tr>
+		<tr>
+			<td>Low</td><td id="dt_min_out_temp"></td><td id="min_out_temp"></td>
+		</tr>
+		</table>
+		</td>
+		<td>
+		<table id="alltemp" class="innertable">
+		<tr class="innertableheading">
+			<td>All Time</td><td>Date</td><td>T(F)</td>
+		</tr>
+		<tr>
+			<td>High</td><td id="dt_hist_max_temp"></td><td id="hist_max_temp"></td>
+		</tr>
+		<tr>
+			<td>Feels Like</td><td id="dt_max_feels_like"></td><td id="max_feels_like"></td>
+		</tr>
+		<tr>
+			<td>Low</td><td id="dt_hist_min_temp"></td><td id="hist_min_temp"></td>
+		</tr>
+		<tr>
+			<td>Wind Chill</td><td id="dt_min_feels_like"></td><td id="min_feels_like"></td>
+		</tr>
+		</table>
+		</td>
+	</tr>
+	<tr id="curhum">
+		<td>
+		<table id="inshum" class="innertable">
+		<tr class="innertableheading">
+			<td>Inside</td><td>RH</td><td id="insideh"></td>
+		</tr>
+		<tr>
+			<td>Max</td><td id="dt_max_in_hum"></td><td id="max_in_hum"></td>
+		</tr>
+		<tr>
+			<td>Min</td><td id="dt_min_in_hum"></td><td id="min_in_hum"></td>
+		</tr>
+		</table>
+		</td>
+		<td>
+		<table id="outhum" class="innertable">
+		<tr class="innertableheading">
+			<td>Outside</td><td>RH</td><td id="outsideh"></td>
+		</tr>
+		<tr>
+			<td>Max</td><td id="dt_max_out_hum"><td id="max_out_hum"></td></td>
+		</tr>
+		<tr>
+			<td>Min</td><td id="dt_min_out_hum"></td><td id="min_out_hum"></td>
+		</tr>
+		</table>
+		</td>
+		<td><table id="curpres" class="innertable">
+			<tr class="innertableheading"><td>Pressure (inHg)</td><td id="bpressure"></td></tr>
+			<tr><td>Min</td><td id="min_pres_hg"></td></tr>
+			<tr><td>Max</td><td id="max_pres_hg"></td></tr>
+		</table></td>
+	</tr>
+	<tr id="rainfall">
+		<td><table id="currain" class="innertable">
+			<tr class="innertableheading"><td>Rain</td><td>mm</td></tr>
+			<tr><td>Last 30 days</td><td id="rainmo"></td></tr>
+			<tr><td>Last 7 days</td><td id="rainweek"></td></tr>
+			<tr><td>Last 24</td><td id="rainday"></td></tr>
+			<tr><td>Last hr</td><td id="rainhour"></td></tr>
+		</table></td>
+		<td><table id="rainrecords" class="innertable">
+			<tr class="innertableheading"><td>Record</td><td>Date</td><td>Rainfall</td></tr>
+			<tr><td>In 24 Hr</td><td id="dt_max_rain_day"></td><td id="max_rain_day"></td></tr>
+			<tr><td>In 1 Hr</td><td id="dt_max_rain_hour"></td><td id="max_rain_hour"></td></tr>
+			<tr><td id="blank">&nbsp;</td></tr>
+			<tr><td id="blank">&nbsp;</td></tr>
+		</table></td>
+		<td><table id="wind" class="innertable">
+			<tr class="innertableheading">
+				<td>Wind (mph)</td><td id="blank">&nbsp;</td><td id="cwindspeed"></td>
+			</tr>
+			<tr><td>Direction (deg)</td><td id="blank">&nbsp;</td><td id="winddir"></td></tr>
+			<tr><td>Recent Gust</td><td id="blank">&nbsp;</td><td id="windgust"></td></tr>
+			<tr><td>Max Gust</td><td id="dt_max_gust"></td><td id="max_gust"></td></tr>
+			<tr><td id="blank">&nbsp;</td></tr>
+		</table></td>
+	</tr>
+	</table>
+</div>
+</div>
+<div id="temperature" class="history" >Temperature</div>
+<div id="humidity" class="history" >Humidity</div>
+<div id="rainhist" class="history" >Rainfall</div>
+<div id="rainlong" class="history" >Historical Rainfall</div>
+<div id="windspeed" class="history" >Wind</div>
+<div id="pressure" class="history" >Pressure</div>
+
+</body>
+</html>
