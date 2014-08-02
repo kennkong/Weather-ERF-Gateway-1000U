@@ -115,7 +115,8 @@ CREATE TABLE IF NOT EXISTS `sensordates` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `name` varchar(45) NOT NULL,
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB  DEFAULT CHARSET=latin1 AUTO_INCREMENT=10 ;
+) ENGINE=InnoDB  DEFAULT CHARSET=latin1 AUTO_INCREMENT=1 ;
+INSERT INTO `sensordates` (`name`) VALUES('Last Rain Reset');
 
 -- --------------------------------------------------------
 
@@ -144,7 +145,25 @@ CREATE TABLE IF NOT EXISTS `sensors` (
   `valtype` int(10) unsigned DEFAULT NULL,
   `digits` int(10) unsigned DEFAULT NULL,
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB  DEFAULT CHARSET=utf8 AUTO_INCREMENT=18 ;
+) ENGINE=InnoDB  DEFAULT CHARSET=utf8 AUTO_INCREMENT=1 ;
+INSERT INTO `sensors` VALUES
+(1, 'Sample Time', '', 0, 0),
+(2, 'Inside Temp', '', 0, 1),
+(3, 'Inside Humidity', '', 0, 0),
+(4, 'Outside Temp', NULL, NULL, 1),
+(5, 'Outside Humidity', NULL, NULL, 0),
+(6, 'Barometric Pressure', NULL, NULL, 2),
+(7, 'Wind Direction', NULL, NULL, 1),
+(8, 'Wind Speed', NULL, NULL, 1),
+(9, 'Rainfall Total', NULL, NULL, 2),
+(10, 'Rainfall 1H', NULL, NULL, 2),
+(11, 'Rainfall 24H', NULL, NULL, 2),
+(12, 'Rainfall Wk', NULL, NULL, 2),
+(13, 'Rainfall Mo', NULL, NULL, 2),
+(14, 'Wind Chill', NULL, NULL, 1),
+(15, 'Wind Gust', NULL, NULL, 1),
+(16, 'Dew Point', NULL, NULL, 1),
+(17, 'Unknown history value', NULL, NULL, 2);
 
 -- --------------------------------------------------------
 
@@ -226,7 +245,7 @@ CREATE TABLE IF NOT EXISTS `v_packets_sensorvalues` (
 --
 DROP TABLE IF EXISTS `historyvalues`;
 
-CREATE ALGORITHM=UNDEFINED DEFINER=`admin`@`localhost` SQL SECURITY DEFINER VIEW `historyvalues` AS select `P`.`id` AS `id`,`P`.`timestamp` AS `timestamp`,`P`.`packettype` AS `packettype`,`P`.`stationid` AS `stationid`,`S`.`sid` AS `sid`,`S`.`value` AS `value` from (`packets` `P` join `sensorvalues` `S` on((`P`.`id` = `S`.`id`))) where (`P`.`packettype` = 9) order by `P`.`id` desc;
+CREATE ALGORITHM=UNDEFINED DEFINER=`admin`@`localhost` SQL SECURITY INVOKER VIEW `historyvalues` AS select `P`.`id` AS `id`,`P`.`timestamp` AS `timestamp`,`P`.`packettype` AS `packettype`,`P`.`stationid` AS `stationid`,`S`.`sid` AS `sid`,`S`.`value` AS `value` from (`packets` `P` join `sensorvalues` `S` on((`P`.`id` = `S`.`id`))) where (`P`.`packettype` = 9) order by `P`.`id` desc;
 
 -- --------------------------------------------------------
 
@@ -235,7 +254,7 @@ CREATE ALGORITHM=UNDEFINED DEFINER=`admin`@`localhost` SQL SECURITY DEFINER VIEW
 --
 DROP TABLE IF EXISTS `v_packets_sensordatevalues`;
 
-CREATE ALGORITHM=UNDEFINED DEFINER=`admin`@`localhost` SQL SECURITY DEFINER VIEW `v_packets_sensordatevalues` AS select `P`.`id` AS `id`,`P`.`timestamp` AS `timestamp`,`P`.`packettype` AS `packettype`,`P`.`stationid` AS `stationid`,`S`.`did` AS `did`,`S`.`date` AS `date`,`S`.`prior_value` AS `prior_value` from (`packets` `P` join `sensordatevalues` `S` on((`P`.`id` = `S`.`pid`)));
+CREATE ALGORITHM=UNDEFINED DEFINER=`admin`@`localhost` SQL SECURITY INVOKER VIEW `v_packets_sensordatevalues` AS select `P`.`id` AS `id`,`P`.`timestamp` AS `timestamp`,`P`.`packettype` AS `packettype`,`P`.`stationid` AS `stationid`,`S`.`did` AS `did`,`S`.`date` AS `date`,`S`.`prior_value` AS `prior_value` from (`packets` `P` join `sensordatevalues` `S` on((`P`.`id` = `S`.`pid`)));
 
 -- --------------------------------------------------------
 
@@ -244,7 +263,7 @@ CREATE ALGORITHM=UNDEFINED DEFINER=`admin`@`localhost` SQL SECURITY DEFINER VIEW
 --
 DROP TABLE IF EXISTS `v_packets_sensorvalues`;
 
-CREATE ALGORITHM=UNDEFINED DEFINER=`admin`@`localhost` SQL SECURITY DEFINER VIEW `v_packets_sensorvalues` AS select `P`.`id` AS `id`,`P`.`timestamp` AS `timestamp`,`P`.`packettype` AS `packettype`,`P`.`stationid` AS `stationid`,`S`.`sid` AS `sid`,`S`.`value` AS `value` from (`packets` `P` join `sensorvalues` `S` on((`P`.`id` = `S`.`id`)));
+CREATE ALGORITHM=UNDEFINED DEFINER=`admin`@`localhost` SQL SECURITY INVOKER VIEW `v_packets_sensorvalues` AS select `P`.`id` AS `id`,`P`.`timestamp` AS `timestamp`,`P`.`packettype` AS `packettype`,`P`.`stationid` AS `stationid`,`S`.`sid` AS `sid`,`S`.`value` AS `value` from (`packets` `P` join `sensorvalues` `S` on((`P`.`id` = `S`.`id`)));
 
 --
 -- Constraints for dumped tables
