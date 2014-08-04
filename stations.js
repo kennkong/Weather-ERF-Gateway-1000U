@@ -1,5 +1,5 @@
 //stations
-var STATIONID;
+var STATIONID=$.query.get('stationid');
 $(function () {
 	$("#stationdiv").prepend($("<form></form>").attr("id", "stations"));
 	$("#stations").prepend($("<select></select>").attr("id", "stationlist"));
