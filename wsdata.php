@@ -1,6 +1,9 @@
 <?php
 // Note that all this code assumes a single weather station
-$stationid = 55;
+$stationid = @$_GET['stationid'];
+if (!isset($stationid)) $stationid = 55;
+
+file_put_contents('wsdata.log', "stationid is ".print_r($stationid, true)."\n", FILE_APPEND);
 try {
 	$wdb = new PDO('mysql:dbname=weather');
 	$wdb->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
@@ -160,7 +163,8 @@ case 5:{// Record temps and rain
 $sql = "
 SELECT R.sid, R.max_flag, R.value, unix_timestamp(P.timestamp) * 1000 as timestamp
 FROM packets P JOIN records R on P.stationid = R.stations_id AND P.id = R.pid
-WHERE (R.max_flag and R.sid in (4,10,11,14,15)) OR (NOT R.max_flag AND R.sid in(4,14))
+WHERE R.stations_id = $stationid
+AND(R.max_flag and R.sid in (4,10,11,14,15)) OR (NOT R.max_flag AND R.sid in(4,14))
 ";	
 	$pds = $wdb->query($sql);
 	while ($r = $pds->fetch(PDO::FETCH_ASSOC)) :
