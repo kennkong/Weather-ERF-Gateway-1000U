@@ -176,7 +176,11 @@ function fixuprain($pid) { // Fix up weekly and monthly rainfall to be running t
 		$pds = $wdb->query($sql);
 		$pds->bindColumn(1, $dts);
 		$pds->fetch(PDO::FETCH_BOUND);
-		$dt_lrr = new DateTime($dts);
+		if (!isset($dts)) {
+			updatelog("No prior last rain reset\n", 1);
+			$dt_lrr = new DateTime();
+		} else $dt_lrr = new DateTime($dts);
+		
 		updatelog("Last rain reset from db: ".$dt_lrr->format('Y-m-d H:i:s')."\n",2);
 		$pds->closeCursor();
 	} catch (PDOException $e) {
@@ -196,10 +200,8 @@ function fixuprain($pid) { // Fix up weekly and monthly rainfall to be running t
 		ORDER by timestamp desc LIMIT 1
 		";
 		try {
-			$pds = $wdb->query($sql);
-			$pds->bindColumn(2, $prior_value);
-			$pds->fetch(PDO::FETCH_BOUND);
-			$pds->closeCursor();
+			list($prior_value) = $wdb->query($sql)->fetch(PDO::FETCH_NUM);
+			if (!isset($prior_value)) $prior_value = 0;
 		} catch (PDOException $e) {
 			updatelog("Failed to retrieve prior rain total: ".$e->getMessage."\n", 0);
 		}
@@ -218,30 +220,30 @@ function fixuprain($pid) { // Fix up weekly and monthly rainfall to be running t
 	updatelog("prev_mo_rain = ".$sdp['prev_mo_rain']."\n", 2);
 }
 function prev_days_rain($days) {
-	global $wdb;
+	global $wdb, $stationid;
 	// Get previous week's rain total
-	$sql = "SELECT P.id, SV.value"
-		." FROM packets P JOIN sensorvalues SV ON P.id = SV.id"
-		." WHERE P.timestamp < DATE_SUB(NOW(), INTERVAL $days DAY)"
-		." AND SV.sid = 9"
-		." ORDER by P.id desc LIMIT 1";
+	$sql = "SELECT P.id, SV.value
+		 FROM packets P JOIN sensorvalues SV ON P.id = SV.id
+		 WHERE P.timestamp < DATE_SUB(NOW(), INTERVAL $days DAY)
+		 AND P.stationid = $stationid
+		 AND SV.sid = 9
+		 ORDER by P.timestamp desc LIMIT 1";
 	try {
-		$pds = $wdb->query($sql);
-		$pds->bindColumn(1, $prior_pid);
-		$pds->bindColumn(2, $prior_value);
-		$pds->fetch(PDO::FETCH_BOUND);
-		$pds->closeCursor();
+		list($prior_pid, $prior_value) = $wdb->query($sql)->fetch(PDO::FETCH_NUM);
+		if (!isset($prior_pid)) {
+			$prior_pid = 0;
+			$prior_value = 0;
+			}
 	} catch (PDOException $e) {
 		updatelog("Failed to retrieve prior week's rain total: ".$e->getMessage()."\n", 0);
 	}
 	// Get rain totals from intervening resets, if any
 	$sql = "SELECT SUM(`prior_value`) as inter_rain"
-		." FROM sensordatevalues WHERE `pid` > $prior_pid"
+		." FROM v_packets_sensordatevalues WHERE `id` > $prior_pid"
+		." AND stationid = $stationid"
 		." AND did = 1";
 	try {
-		$pds = $wdb->query($sql);
-		$pds->bindColumn(1, $inter_rain);
-		$pds->fetch(PDO::FETCH_BOUND);
+		list($inter_rain) = $wdb->query($sql)->fetch(PDO::FETCH_NUM);
 		if (!isset($inter_rain)) $inter_rain = 0;
 	} catch (PDOException $e) {
 		updatelog("Failed to retrieve prior rain totals: ".$e->getMessage()."\n", 0);
