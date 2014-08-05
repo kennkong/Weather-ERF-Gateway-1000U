@@ -2,6 +2,8 @@
 $(function () {
 	STATIONID=$.query.get('stationid');
 	if (STATIONID == "") STATIONID=55;
+	var scnt = 0;
+	$("#stationdiv").hide();
 	$("#stationdiv").prepend($("<form></form>").attr("id", "stations"));
 	$("#stations").prepend($("<select></select>").attr("id", "stationlist"));
 	$("#stationlist").attr("onchange", 
@@ -16,6 +18,8 @@ $(function () {
 				option.attr("selected","selected");
 			}	
 			$("#stationlist").append(option);
+			scnt = i;
 		});
+		if (scnt > 0) $("#stationdiv").show();
 	});
 });
