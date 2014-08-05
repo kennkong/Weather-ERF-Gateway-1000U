@@ -1,7 +1,7 @@
 //Barometric Pressure
 $(function() {
 
-	$.getJSON('wsdata.php?sensor=pressure', function(data) {
+	$.getJSON('wsdata.php?sensor=pressure&stationid='+STATIONID, function(data) {
 		// Create the chart
 		$('#pressure').highcharts({
             		chart: {
