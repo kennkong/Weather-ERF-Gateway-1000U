@@ -104,7 +104,7 @@ $(function () {
 
 	$.each(mycharts, function(i, mychart) {
 
-		$.getJSON('wsdata.php?sensor='+ mychart.sensor,	function(data) {
+		$.getJSON('wsdata.php?sensor='+ mychart.sensor + '&stationid=' + STATIONID,	function(data) {
 
 			seriesOptions[i] = {
 				type: mychart.type,

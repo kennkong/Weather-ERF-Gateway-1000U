@@ -8,7 +8,7 @@ $(function () {
 
 	$.each(names, function(i, name) {
 
-		$.getJSON('wsdata.php?sensor='+ name.toLowerCase(),	function(data) {
+		$.getJSON('wsdata.php?sensor='+ name.toLowerCase()+'&stationid='+STATIONID,	function(data) {
 
 			seriesOptions[i] = {
 				name: name,
