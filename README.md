@@ -14,7 +14,7 @@ You can see a discussion about how this was created here:
 http://www.wxforum.net/index.php?topic=14299
 
 Much of the database design comes from SkyDvr.
-Much of the request.breq comes from keckec.
+Much of the request.breq comes from mycal, by way of keckec's version.
 Much of the weather.html and wsdata.php comes from Scott_A.
 
 I have not tested the registration functionality, which comes from
