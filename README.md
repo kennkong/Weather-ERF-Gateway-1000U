@@ -18,7 +18,7 @@ Much of the request.breq comes from mycal, by way of keckec's version.
 Much of the weather.html and wsdata.php comes from Scott_A.
 
 I have not tested the registration functionality, which comes from
-keckec's original work.  I highly recommend that you register the
+mycal or keckec's original work.  I highly recommend that you register the
 weather station through Lacrosse Technologies first.
 
 Use the Advanced Gateway Setup program from Lacrosse to redirect
@@ -54,7 +54,7 @@ Note on the `records` table: you must populate it yourself with a query
 of your own.  The request.breq script only updates records that exist in
 that table, it won't fill in missing ones.  This is so that only meaningful
 records are kept.  For example, minimum rainfall and wind are pretty useless,
-so there are no records for those.
+so there are no records for those.  I have added the script records.sql to get you started.
 
 Please send comments to the forum topic above, so that everyone can
 benefit from the discussion.
@@ -64,3 +64,7 @@ humidity.html, wind.html, rainfall.html, rainlong.html, and pressure.html displa
 just parts, helpful when modifying the charts to suit your tastes.
 weather.htm whacks the database pretty hard, and reloads every 5 minutes, so
 you might not want to sit on it all the time.
+
+Recent optimizations to the queries and the use of historical tables like records and hourly have greatly improved the load time for the display pages.
+
+I have updated the design to handle multiple weather stations.  If you only have one entry in the stations table, you won't notice the difference, except that you won't need to hardcode the stationid in your wsdata.php.  If you have multiple records in the stations table, you will see a dropdown list at the top of the weather.html (and its subsidiaries) which will allow you to switch which station's data is displayed.  Also, you can add ?stationid=x to the query string to force the selection.
