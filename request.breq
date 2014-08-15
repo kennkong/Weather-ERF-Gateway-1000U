@@ -2,6 +2,7 @@
 error_reporting(E_ALL);
 //----------------------------------------------------------------------------------------------------------
 // Configuration, customize for your situation
+// This will all be over-written below, for documentation now
 //----------------------------------------------------------------------------------------------------------
 date_default_timezone_set('America/New_York');   // We use this to set the correct time on your weather station
 $ping_interval = 300; //How often gateway reports (in seconds) (set in 00:70 reply)
@@ -19,14 +20,14 @@ $history_interval = chr(0x03);
 //   0x07 -- 2 hours (changes every even hour, local time)
 */
 
-// Output flags													
+// Output flags	will be overwritten, but must be set here first												
 const OF_RTG = 0x01; // Reply to gateway
 const OF_WDB = 0x02; // Write to database
 const OF_DBG = 0x04; // Write to wstation.log file
 const OF_WUG = 0x08; // Send to Weather Underground
 const OF_LAC = 0x10; // Send to Lacrosse server
 const OF_RES = 0x30; // Send Lacrosse response instead (forces OF_LAC)
-const DBG_LVL = 1;
+$DBG_LVL = 1;
 $OF = OF_RTG | OF_WDB | OF_DBG | OF_WUG;
 
 function checksum8($buffer) { // Simple 8 bit checksum
@@ -87,8 +88,8 @@ function heatindex($t, $rh) { // T in deg F
 	return round($hi,1);
 }
 function updatelog($message, $level = 1) { // Write to wstation.log
-	global $OF;
-	if ($level > DBG_LVL || !($OF & OF_DBG)) return;
+	global $OF, $DBG_LVL;
+if ($level > $DBG_LVL || !($OF & OF_DBG)) return;
 	file_put_contents('wstation.log', $message, FILE_APPEND);
 }
 function wdb() { // Create database connection
@@ -463,13 +464,22 @@ if (!$station) {
 	updatelog("Unknown station $http_id\n", 0);
 	exit;
 }
-//$pds->closeCursor();
+// Set configuration
 $stationid = $station['id'];
 $station_serial = pack('H*', $station['station_serial']);
+if (!date_default_timezone_set($station['timezone'])) date_default_timezone_set('UTC');   // We use this to set the correct time on your weather station
+$ping_interval = (int) $station['ping_interval']; //How often gateway reports (in seconds) (set in 00:70 reply)
+$sensor_interval = (int) $station['sensor_interval']; // Minutes between packets - 1
+$history_interval = (int) $station['history_interval'];
+//file_put_contents('wstation.log', "OF ".ord($OF)."\n", FILE_APPEND);
 
+$OF = (int) $station['output_flags'];
+$DBG_LVL = (int) $station['debug_level'];
+/*
+*/
 
 // Exclude packets from log here
-switch ($id1.":".$id2) :
+switch ($id1.":".$id2) {
 	case "01:01": 
 		if (strlen($postdata) == 197) break; //Comment out to skip SDP
 		if (strlen($postdata) != 197) break; //Comment out to skip history
@@ -477,7 +487,7 @@ switch ($id1.":".$id2) :
 	//case "01:00":
 	//case "00:70": 
 		$OF &= ~OF_DBG;
-endswitch;
+} //endswitch;
 // Log it
 updatelog(date("Y-m-d H:i:s")." $http_id"
 	. ((strlen($postdata) == 0) ? "\n" : 
