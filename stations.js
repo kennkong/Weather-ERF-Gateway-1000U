@@ -1,5 +1,6 @@
 //stations with synchronous request
 STATIONID = "";
+STATIONINFO = [];
 $(function () {
 
     var str = location.search.replace(/^[?#]/, ''); // Remove leading ? or #
@@ -22,7 +23,6 @@ $(function () {
 		dataType: "json",
 		success: function(data) {
 			var scnt = 0;
-			console.log(data);
 			$.each(data, function(i, station) {
 				var option = $("<option></option>")
 					.attr("value",station[0])
@@ -30,6 +30,7 @@ $(function () {
 				if (STATIONID == "") STATIONID = station[0];
 				if (STATIONID == station[0]) {
 					option.attr("selected","selected");
+					STATIONINFO = station;
 				}	
 				$("#stationlist").append(option);
 				scnt = i;
