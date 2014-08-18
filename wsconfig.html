@@ -1,0 +1,148 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+<title>Weather Station Configuration</title>
+<style>
+table {
+	border: 1px solid black;
+	width: 80%;
+}
+input[type="text"] {
+	float: right;
+}
+#boxes td {
+	vertical-align: top;
+}
+</style>
+<script type="text/javascript" src="//ajax.googleapis.com/ajax/libs/jquery/1.11.1/jquery.min.js"></script>
+<script type="text/javascript">//stations with synchronous request
+STATIONID = "";
+STATIONINFO = [];
+$(function () {
+
+    var str = location.search.replace(/^[?#]/, ''); // Remove leading ? or #
+	str = str.replace(/[&;]$/, ''); // Remove trailing & or ;
+	if (str.length > 0) {
+		$.each(str.split("[&;]"), function(i,piece) {
+			var key = piece.split("=")[0] || "";
+			if (key == "stationid") STATIONID = piece.split("=")[1] || "";
+		});
+	};
+	var scnt = 0;
+	$("#stationdiv").hide();
+	$("#stationdiv").prepend($("<form></form>").attr("id", "stations"));
+	$("#stations").prepend($("<select></select>").attr("id", "stationlist"));
+	$("#stationlist").attr("onchange", 
+		"STATIONID = $(':selected')[0].value; location.search='?stationid='+STATIONID;");
+	$.ajax( {
+		url: 'wsdata.php?sensor=stations',
+		async: false,
+		dataType: "json",
+		success: function(data) {
+			var scnt = 0;
+			$.each(data, function(i, station) {
+				var option = $("<option></option>")
+					.attr("value",station[0])
+					.text(station[0]+" - "+station[1]);
+				if (STATIONID == "") STATIONID = station[0];
+				if (STATIONID == station[0]) {
+					option.attr("selected","selected");
+					STATIONINFO = station;
+					$("form[name='stationinfo']").attr("action", "wsconfig.php?stationid="+STATIONID);
+				}	
+				$("#stationlist").append(option);
+				scnt = i;
+			});
+			if (scnt > 0) $("#stationdiv").show();
+			$("[name='sdescription']").val(STATIONINFO[1]);
+			$("[name='smac']").val(STATIONINFO[2]);
+			$("[name='sip4']").val(STATIONINFO[5]);
+			$("[name='sserial']").val(STATIONINFO[3]);
+			$("[name='sstation_serial']").val(STATIONINFO[4]);
+			$("[name='swug_name']").val(STATIONINFO[6]);
+			$("[name='swug_sec']").val(STATIONINFO[7]);
+			$("[name='slast_hist_addr']").val(STATIONINFO[8]);
+			$("[name='stimezone']").val(STATIONINFO[9]);
+			$("[name='sping_interval']").val(STATIONINFO[10]);
+			$("[name='ssensor_interval']").val(STATIONINFO[11]);
+			$("[name='shistory_interval']").each(function (i, radio) {
+				if (radio.value == STATIONINFO[12]) {
+					radio.checked = true;
+					return false;
+				};
+			})
+			$("[name='sdebug_level']").each(function (i, radio) {
+				if (radio.value == STATIONINFO[13]) {
+					radio.checked = true;
+					return false;
+				};
+			})
+			$("[name='soutput_flags[]']").each(function (i, checkbox) {
+				checkbox.checked =(checkbox.value & STATIONINFO[14]);
+			})
+		}
+	});
+});
+</script>
+</head>
+<body>
+<div id="stationdiv"></div>
+<form name="stationinfo" enctype="multipart/form-data" action="wsconfig.php" method="post" target="response">
+<table id="fields">
+<tr>
+<td>Description<input type="text" name="sdescription" maxlength="25"/></td>
+<td>MAC Address<input type="text" name="smac" maxlength="8"/></td>
+</tr>
+<tr>
+<td>Serial #<input type="text" name="sserial"/></td>
+<td>Serial Code<input type="text" name="sstation_serial"/></td>
+</tr>
+<tr><td>IPv4 Address (Not used)<input type="text" name="sip4"/></td></tr>
+<tr>
+<td>WUG name<input type="text" name="swug_id"/></td>
+<td>WUG Password<input type="text" name="swug_sec"/></td>
+</tr>
+<tr>
+<td>Last History Address<input type="text" name="slast_hist_addr"/></td>
+<td>Time Zone<input type="text" name="stimezone"/></td>
+</tr>
+</table>
+<table id="boxes">
+<tr>
+<td>Ping Interval (seconds)<input type="text" name="sping_interval" size="4"/></td>
+<td>Sensor Interval (Minutes - 1)<input type="text" name="ssensor_interval" size="3"/></td>
+</tr>
+<tr>
+<td><fieldset><legend>History Interval</legend>
+<input type="radio" name="shistory_interval" value="0"/>1 minute<br>
+<input type="radio" name="shistory_interval" value="1"/>5 minutes<br>
+<input type="radio" name="shistory_interval" value="2"/>10 minutes<br>
+<input type="radio" name="shistory_interval" value="3"/>15 minutes (default)<br>
+<input type="radio" name="shistory_interval" value="4"/>20 minutes<br>
+<input type="radio" name="shistory_interval" value="5"/>30 minutes<br>
+<input type="radio" name="shistory_interval" value="6"/>1 hour<br>
+<input type="radio" name="shistory_interval" value="7"/>2 hours<br>
+</fieldset></td>
+<td><fieldset><legend>Debug Level</legend>
+<input type="radio" name="sdebug_level" value="0"/>Critical errors only<br>
+<input type="radio" name="sdebug_level" value="1"/>Normal progress messages<br>
+<input type="radio" name="sdebug_level" value="2"/>Full information<br>
+</fieldset></td>
+<td><fieldset><legend>Output Flags</legend>
+<input type="checkbox" name="soutput_flags[]" value="1"/>Reply to gateway (Normal)<br>
+<input type="checkbox" name="soutput_flags[]" value="2"/>Save in database (Normal)<br>
+<input type="checkbox" name="soutput_flags[]" value="4"/>Write to wstation.log (Normal)<br>
+<input type="checkbox" name="soutput_flags[]" value="8"/>Send to Weather Underground (Normal)<br>
+<input type="checkbox" name="soutput_flags[]" value="16"/>Relay to weatherdirect (Debug)<br>
+<input type="checkbox" name="soutput_flags[]" value="32"/>Use weatherdirect response (Debug)<br>
+</fieldset></td>
+</tr>
+<tr id="buttons">
+<td><input type="submit" name="submit" value="Submit" onclick=""></td>
+<td><iframe name="response" height="20" width="80" seamless="seamless"></iframe></td>
+<td><input type="button" name="reset" value="Reset" onclick="location.search='?stationid='+STATIONID;"></td>
+</tr>
+</table>
+</form>
+</body>
+</html>
