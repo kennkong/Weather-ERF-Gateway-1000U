@@ -48,18 +48,18 @@ $(function () {
 				if (STATIONID == station[0]) {
 					option.attr("selected","selected");
 					STATIONINFO = station;
-					$("form[name='stationinfo']").attr("action", "wsconfig.php?stationid="+STATIONID);
 				}	
 				$("#stationlist").append(option);
 				scnt = i;
 			});
 			if (scnt > 0) $("#stationdiv").show();
+			$("[name='sstationid']").val(STATIONINFO[0]);
 			$("[name='sdescription']").val(STATIONINFO[1]);
 			$("[name='smac']").val(STATIONINFO[2]);
 			$("[name='sip4']").val(STATIONINFO[5]);
 			$("[name='sserial']").val(STATIONINFO[3]);
 			$("[name='sstation_serial']").val(STATIONINFO[4]);
-			$("[name='swug_name']").val(STATIONINFO[6]);
+			$("[name='swug_id']").val(STATIONINFO[6]);
 			$("[name='swug_sec']").val(STATIONINFO[7]);
 			$("[name='slast_hist_addr']").val(STATIONINFO[8]);
 			$("[name='stimezone']").val(STATIONINFO[9]);
@@ -88,23 +88,24 @@ $(function () {
 <body>
 <div id="stationdiv"></div>
 <form name="stationinfo" enctype="multipart/form-data" action="wsconfig.php" method="post" target="response">
+<input type="hidden" name="sstationid" value="0"/>
 <table id="fields">
 <tr>
 <td>Description<input type="text" name="sdescription" maxlength="25"/></td>
 <td>MAC Address<input type="text" name="smac" maxlength="8"/></td>
 </tr>
 <tr>
-<td>Serial #<input type="text" name="sserial"/></td>
-<td>Serial Code<input type="text" name="sstation_serial"/></td>
+<td>Serial #<input type="text" name="sserial" maxlenth="8"/></td>
+<td>Serial Code<input type="text" name="sstation_serial" maxlength="16"/></td>
 </tr>
-<tr><td>IPv4 Address (Not used)<input type="text" name="sip4"/></td></tr>
+<tr><td>IPv4 Address (Not used)<input type="text" name="sip4" maxlength="19"/></td></tr>
 <tr>
-<td>WUG name<input type="text" name="swug_id"/></td>
-<td>WUG Password<input type="text" name="swug_sec"/></td>
+<td>WUG name<input type="text" name="swug_id" maxlength="12"/></td>
+<td>WUG Password<input type="text" name="swug_sec" maxlength="12"/></td>
 </tr>
 <tr>
-<td>Last History Address<input type="text" name="slast_hist_addr"/></td>
-<td>Time Zone<input type="text" name="stimezone"/></td>
+<td>Last History Address<input type="text" name="slast_hist_addr" maxlength="4"/></td>
+<td>Time Zone<input type="text" name="stimezone" maxlength="40"/></td>
 </tr>
 </table>
 <table id="boxes">
