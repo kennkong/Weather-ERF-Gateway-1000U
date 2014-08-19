@@ -194,7 +194,7 @@ break;
 case 7: {// Station List
 	print json_encode($wdb->query("
 	SELECT * FROM stations
-	")->fetchAll(PDO::FETCH_NUM), JSON_NUMERIC_CHECK);
+	")->fetchAll(PDO::FETCH_NUM));
 }
 break;
 endswitch;
