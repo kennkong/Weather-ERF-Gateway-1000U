@@ -42,10 +42,10 @@ $(function () {
 			var scnt = 0;
 			$.each(data, function(i, station) {
 				var option = $("<option></option>")
-					.attr("value",station[0])
-					.text(station[0]+" - "+station[1]);
-				if (STATIONID == "") STATIONID = station[0];
-				if (STATIONID == station[0]) {
+					.attr("value",station.id)
+					.text(station.id+" - "+station.description);
+				if (STATIONID == "") STATIONID = station.id;
+				if (STATIONID == station.id) {
 					option.attr("selected","selected");
 					STATIONINFO = station;
 				}	
@@ -53,32 +53,32 @@ $(function () {
 				scnt = i;
 			});
 			if (scnt > 0) $("#stationdiv").show();
-			$("[name='sstationid']").val(STATIONINFO[0]);
-			$("[name='sdescription']").val(STATIONINFO[1]);
-			$("[name='smac']").val(STATIONINFO[2]);
-			$("[name='sip4']").val(STATIONINFO[5]);
-			$("[name='sserial']").val(STATIONINFO[3]);
-			$("[name='sstation_serial']").val(STATIONINFO[4]);
-			$("[name='swug_id']").val(STATIONINFO[6]);
-			$("[name='swug_sec']").val(STATIONINFO[7]);
-			$("[name='slast_hist_addr']").val(STATIONINFO[8]);
-			$("[name='stimezone']").val(STATIONINFO[9]);
-			$("[name='sping_interval']").val(STATIONINFO[10]);
-			$("[name='ssensor_interval']").val(STATIONINFO[11]);
+			$("[name='sstationid']").val(STATIONINFO.id);
+			$("[name='sdescription']").val(STATIONINFO.description);
+			$("[name='smac']").val(STATIONINFO.mac);
+			$("[name='sserial']").val(STATIONINFO.serial);
+			$("[name='sstation_serial']").val(STATIONINFO.station_serial);
+			$("[name='sip4']").val(STATIONINFO.ip4);
+			$("[name='swug_id']").val(STATIONINFO.wug_id);
+			$("[name='swug_sec']").val(STATIONINFO.wug_sec);
+			$("[name='slast_hist_addr']").val(STATIONINFO.last_hist_addr);
+			$("[name='stimezone']").val(STATIONINFO.timezone);
+			$("[name='sping_interval']").val(STATIONINFO.ping_interval);
+			$("[name='ssensor_interval']").val(STATIONINFO.sensor_interval);
 			$("[name='shistory_interval']").each(function (i, radio) {
-				if (radio.value == STATIONINFO[12]) {
+				if (radio.value == STATIONINFO.history_interval) {
 					radio.checked = true;
 					return false;
 				};
 			})
 			$("[name='sdebug_level']").each(function (i, radio) {
-				if (radio.value == STATIONINFO[13]) {
+				if (radio.value == STATIONINFO.debug_level) {
 					radio.checked = true;
 					return false;
 				};
 			})
 			$("[name='soutput_flags[]']").each(function (i, checkbox) {
-				checkbox.checked =(checkbox.value & STATIONINFO[14]);
+				checkbox.checked =(checkbox.value & STATIONINFO.output_flags);
 			})
 		}
 	});
