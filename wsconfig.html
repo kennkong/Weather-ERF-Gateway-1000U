@@ -143,7 +143,7 @@ else return /[0-9]/.test(keychar);
 	action="wsconfig.php"
 	onSubmit="return formcheck(this)"
 	method="post" 
-	target="response">
+	target="_blank">
 <input type="hidden" name="id" value="0"/>
 <table id="fields">
 <tr>
@@ -152,6 +152,9 @@ else return /[0-9]/.test(keychar);
 	maxlength="8"
 	pattern="[0-9A-F]{8}"
 	onkeypress="this.value = this.value.toUpperCase(); return is_hex(event)"
+	/></td>
+<td>IPv4 Address<input type="text" name="ip4" 
+	maxlength="15"
 	/></td>
 </tr>
 <tr>
@@ -165,18 +168,15 @@ else return /[0-9]/.test(keychar);
 	pattern="[0-9a-fA-F]{16}"
 	onkeypress="return is_hex(event)"
 	/></td>
-</tr>
-<tr><td>IPv4 Address (Not used)<input type="text" name="ip4" maxlength="19"/></td></tr>
-<tr>
-<td>WUG name<input type="text" name="wug_id" maxlength="12"/></td>
-<td>WUG Password<input type="text" name="wug_sec" maxlength="12"/></td>
-</tr>
-<tr>
 <td>Last History Address<input type="text" name="last_hist_addr" 
 	maxlength="4"
 	pattern="[0-9a-f]{4}"
 	onkeypress="return is_hex(event)"
 	/></td>
+</tr>
+<tr>
+<td>WUG name<input type="text" name="wug_id" maxlength="12"/></td>
+<td>WUG Password<input type="text" name="wug_sec" maxlength="12"/></td>
 <td>Time Zone<input type="text" name="timezone" maxlength="40"/></td>
 </tr>
 </table>

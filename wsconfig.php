@@ -1,6 +1,3 @@
-<!DOCTYPE HTML>
-<html>
-<body>
 <?php
 error_reporting(E_ALL);
 $sql = "UPDATE stations SET ";
@@ -27,5 +24,3 @@ try {
 }
 echo "success";
 ?>
-</body>
-</html>
