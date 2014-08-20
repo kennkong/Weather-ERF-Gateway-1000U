@@ -53,93 +53,175 @@ $(function () {
 				scnt = i;
 			});
 			if (scnt > 0) $("#stationdiv").show();
-			$("[name='sstationid']").val(STATIONINFO.id);
-			$("[name='sdescription']").val(STATIONINFO.description);
-			$("[name='smac']").val(STATIONINFO.mac);
-			$("[name='sserial']").val(STATIONINFO.serial);
-			$("[name='sstation_serial']").val(STATIONINFO.station_serial);
-			$("[name='sip4']").val(STATIONINFO.ip4);
-			$("[name='swug_id']").val(STATIONINFO.wug_id);
-			$("[name='swug_sec']").val(STATIONINFO.wug_sec);
-			$("[name='slast_hist_addr']").val(STATIONINFO.last_hist_addr);
-			$("[name='stimezone']").val(STATIONINFO.timezone);
-			$("[name='sping_interval']").val(STATIONINFO.ping_interval);
-			$("[name='ssensor_interval']").val(STATIONINFO.sensor_interval);
-			$("[name='shistory_interval']").each(function (i, radio) {
-				if (radio.value == STATIONINFO.history_interval) {
-					radio.checked = true;
+			
+			$("input[type='text']").each(function() {
+				this.value = STATIONINFO[this.name];
+			});
+			$("[name='id']").val(STATIONINFO.id);
+			$("[name='history_interval']").each(function () {
+				if (this.value == STATIONINFO.history_interval) {
+					this.checked = true;
 					return false;
 				};
 			})
-			$("[name='sdebug_level']").each(function (i, radio) {
-				if (radio.value == STATIONINFO.debug_level) {
-					radio.checked = true;
+			$("[name='debug_level']").each(function () {
+				if (this.value == STATIONINFO.debug_level) {
+					this.checked = true;
 					return false;
 				};
 			})
-			$("[name='soutput_flags[]']").each(function (i, checkbox) {
-				checkbox.checked =(checkbox.value & STATIONINFO.output_flags);
+			$("[name='output_flags[]']").each(function () {
+				this.checked =(this.value & STATIONINFO.output_flags);
 			})
 		}
 	});
 });
+function formatcheck(fld, pat) {
+	if (!pat.test(fld.value)) {
+		fld.style.borderColor='red';
+		fld.focus();
+		return false;
+	}
+	return true;	
+}
+function formcheck(f) {
+	if (!formatcheck(f['mac'], /[0-9A-F]{8}/)) return false;
+	if (!formatcheck(f['serial'], /[0-9]{0,8}/)) return false;
+	if (!formatcheck(f['station_serial'], /7fff[0-9A-Fa-f]{12}/)) return false;
+	//Disable the last_hist_addr unless it has been changed
+	if (f.elements['last_hist_addr'].value == STATIONINFO.last_hist_addr) {
+		f.elements['last_hist_addr'].disabled = true;
+	} else if (!formatcheck(f['last_hist_addr'], /[0-9a-f]/)) return false;
+	return true;
+}
+function is_hex(e) {
+var key;
+var keychar;
+
+if (window.event)
+   key = window.event.keyCode;
+else if (e)
+   key = e.which;
+else
+   return true;
+keychar = String.fromCharCode(key).toUpperCase();
+
+// control keys
+if ((key==null) || (key==0) || (key==8) || 
+    (key==9) || (key==13) || (key==27) )
+   return true;
+
+// Hex digits
+else return /[0-9A-F]/.test(keychar);
+}
+function is_digit(e) {
+var key;
+var keychar;
+
+if (window.event)
+   key = window.event.keyCode;
+else if (e)
+   key = e.which;
+else
+   return true;
+keychar = String.fromCharCode(key);
+
+// control keys
+if ((key==null) || (key==0) || (key==8) || 
+    (key==9) || (key==13) || (key==27) )
+   return true;
+
+// Dec digits
+else return /[0-9]/.test(keychar);
+}
 </script>
 </head>
 <body>
 <div id="stationdiv"></div>
-<form name="stationinfo" enctype="multipart/form-data" action="wsconfig.php" method="post" target="response">
-<input type="hidden" name="sstationid" value="0"/>
+<form name="stationinfo" 
+	enctype="multipart/form-data" 
+	action="wsconfig.php"
+	onSubmit="return formcheck(this)"
+	method="post" 
+	target="response">
+<input type="hidden" name="id" value="0"/>
 <table id="fields">
 <tr>
-<td>Description<input type="text" name="sdescription" maxlength="25"/></td>
-<td>MAC Address<input type="text" name="smac" maxlength="8"/></td>
+<td>Description<input type="text" name="description" maxlength="25"/></td>
+<td>MAC Address<input type="text" name="mac" 
+	maxlength="8"
+	pattern="[0-9A-F]{8}"
+	onkeypress="this.value = this.value.toUpperCase(); return is_hex(event)"
+	/></td>
 </tr>
 <tr>
-<td>Serial #<input type="text" name="sserial" maxlenth="8"/></td>
-<td>Serial Code<input type="text" name="sstation_serial" maxlength="16"/></td>
+<td>Serial #<input type="text" name="serial" 
+	maxlength="8"
+	pattern="[0-9]*"
+	onkeypress="return is_digit(event)"
+	/></td>
+<td>Serial Code<input type="text" name="station_serial" 
+	maxlength="16"
+	pattern="[0-9a-fA-F]{16}"
+	onkeypress="return is_hex(event)"
+	/></td>
 </tr>
-<tr><td>IPv4 Address (Not used)<input type="text" name="sip4" maxlength="19"/></td></tr>
+<tr><td>IPv4 Address (Not used)<input type="text" name="ip4" maxlength="19"/></td></tr>
 <tr>
-<td>WUG name<input type="text" name="swug_id" maxlength="12"/></td>
-<td>WUG Password<input type="text" name="swug_sec" maxlength="12"/></td>
+<td>WUG name<input type="text" name="wug_id" maxlength="12"/></td>
+<td>WUG Password<input type="text" name="wug_sec" maxlength="12"/></td>
 </tr>
 <tr>
-<td>Last History Address<input type="text" name="slast_hist_addr" maxlength="4"/></td>
-<td>Time Zone<input type="text" name="stimezone" maxlength="40"/></td>
+<td>Last History Address<input type="text" name="last_hist_addr" 
+	maxlength="4"
+	pattern="[0-9a-f]{4}"
+	onkeypress="return is_hex(event)"
+	/></td>
+<td>Time Zone<input type="text" name="timezone" maxlength="40"/></td>
 </tr>
 </table>
 <table id="boxes">
 <tr>
-<td>Ping Interval (seconds)<input type="text" name="sping_interval" size="4"/></td>
-<td>Sensor Interval (Minutes - 1)<input type="text" name="ssensor_interval" size="3"/></td>
+<td>Ping Interval (seconds)<input type="text" name="ping_interval" 
+	size="4"
+	maxlength="4"
+	pattern="[0-9]{1,4}"
+	onkeypress="return is_digit(event)"
+	/></td>
+<td>Sensor Interval (Minutes - 1)<input type="text" name="sensor_interval" 
+	size="3"
+	maxlength="3"
+	pattern="[0-9]{1,3}"
+	onkeypress="return is_digit(event)"
+	/></td>
 </tr>
 <tr>
 <td><fieldset><legend>History Interval</legend>
-<input type="radio" name="shistory_interval" value="0"/>1 minute<br>
-<input type="radio" name="shistory_interval" value="1"/>5 minutes<br>
-<input type="radio" name="shistory_interval" value="2"/>10 minutes<br>
-<input type="radio" name="shistory_interval" value="3"/>15 minutes (default)<br>
-<input type="radio" name="shistory_interval" value="4"/>20 minutes<br>
-<input type="radio" name="shistory_interval" value="5"/>30 minutes<br>
-<input type="radio" name="shistory_interval" value="6"/>1 hour<br>
-<input type="radio" name="shistory_interval" value="7"/>2 hours<br>
+<input type="radio" name="history_interval" value="0"/>1 minute<br>
+<input type="radio" name="history_interval" value="1"/>5 minutes<br>
+<input type="radio" name="history_interval" value="2"/>10 minutes<br>
+<input type="radio" name="history_interval" value="3"/>15 minutes (default)<br>
+<input type="radio" name="history_interval" value="4"/>20 minutes<br>
+<input type="radio" name="history_interval" value="5"/>30 minutes<br>
+<input type="radio" name="history_interval" value="6"/>1 hour<br>
+<input type="radio" name="history_interval" value="7"/>2 hours<br>
 </fieldset></td>
 <td><fieldset><legend>Debug Level</legend>
-<input type="radio" name="sdebug_level" value="0"/>Critical errors only<br>
-<input type="radio" name="sdebug_level" value="1"/>Normal progress messages<br>
-<input type="radio" name="sdebug_level" value="2"/>Full information<br>
+<input type="radio" name="debug_level" value="0"/>Critical errors only<br>
+<input type="radio" name="debug_level" value="1"/>Normal progress messages<br>
+<input type="radio" name="debug_level" value="2"/>Full information<br>
 </fieldset></td>
 <td><fieldset><legend>Output Flags</legend>
-<input type="checkbox" name="soutput_flags[]" value="1"/>Reply to gateway (Normal)<br>
-<input type="checkbox" name="soutput_flags[]" value="2"/>Save in database (Normal)<br>
-<input type="checkbox" name="soutput_flags[]" value="4"/>Write to wstation.log (Normal)<br>
-<input type="checkbox" name="soutput_flags[]" value="8"/>Send to Weather Underground (Normal)<br>
-<input type="checkbox" name="soutput_flags[]" value="16"/>Relay to weatherdirect (Debug)<br>
-<input type="checkbox" name="soutput_flags[]" value="32"/>Use weatherdirect response (Debug)<br>
+<input type="checkbox" name="output_flags[]" value="1"/>Reply to gateway (Normal)<br>
+<input type="checkbox" name="output_flags[]" value="2"/>Save in database (Normal)<br>
+<input type="checkbox" name="output_flags[]" value="4"/>Write to wstation.log (Normal)<br>
+<input type="checkbox" name="output_flags[]" value="8"/>Send to Weather Underground (Normal)<br>
+<input type="checkbox" name="output_flags[]" value="16"/>Relay to weatherdirect (Debug)<br>
+<input type="checkbox" name="output_flags[]" value="48"/>Use weatherdirect response (Debug)<br>
 </fieldset></td>
 </tr>
 <tr id="buttons">
-<td><input type="submit" name="submit" value="Submit" onclick=""></td>
+<td><input type="submit" name="submit" value="Submit"></td>
 <td><iframe name="response" height="20" width="80" seamless="seamless"></iframe></td>
 <td><input type="button" name="reset" value="Reset" onclick="location.search='?stationid='+STATIONID;"></td>
 </tr>

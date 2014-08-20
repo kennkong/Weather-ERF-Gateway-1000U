@@ -201,19 +201,13 @@ DELIMITER ;
 CREATE TABLE IF NOT EXISTS `stations` (
   `id` int(11) NOT NULL AUTO_INCREMENT COMMENT 'Station ID',
   `description` varchar(25) NOT NULL DEFAULT 'New Station',
-  `mac` varchar(11) NOT NULL COMMENT 'Gateway MAC',
+  `mac` char(8) NOT NULL COMMENT 'Gateway MAC',
   `serial` varchar(8) NOT NULL COMMENT 'Station serial #',
   `station_serial` varchar(16) NOT NULL DEFAULT '7FFF000000000000',
   `ip4` varchar(19) NOT NULL COMMENT 'Gateway IP',
   `wug_id` varchar(12) DEFAULT NULL COMMENT 'Weather Underground Station ID',
   `wug_sec` varchar(12) DEFAULT NULL COMMENT 'Weather Underground security',
   `last_hist_addr` varchar(4) NOT NULL,
-	`timezone` varchar(40) NOT NULL DEFAULT 'UTC' COMMENT 'PHP TimeZone',
-	`ping_interval` INT NOT NULL DEFAULT 60 COMMENT 'Gateway ping (seconds)',
-	`sensor_interval` INT NOT NULL DEFAULT 4 COMMENT 'Sensor interval (minutes - 1)',
-	`history_interval` INT NOT NULL DEFAULT 3 COMMENT 'History interval (0-7)',
-	`debug_level` INT NOT NULL DEFAULT 0 COMMENT 'Debug Level (0-2)',
-	`output_flags` INT NOT NULL DEFAULT 3 COMMENT 'Output flags',
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB  DEFAULT CHARSET=latin1 COMMENT='Weather Station identification' AUTO_INCREMENT=57 ;
 
