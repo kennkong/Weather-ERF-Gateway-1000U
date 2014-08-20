@@ -76,7 +76,7 @@ CREATE TABLE IF NOT EXISTS `packets` (
   `stationid` int(10) unsigned NOT NULL,
   PRIMARY KEY (`id`),
   KEY `Index_2` (`timestamp`)
-) ENGINE=InnoDB  DEFAULT CHARSET=utf8 AUTO_INCREMENT=193255 ;
+) ENGINE=InnoDB  DEFAULT CHARSET=utf8  ;
 
 -- --------------------------------------------------------
 
@@ -204,10 +204,10 @@ CREATE TABLE IF NOT EXISTS `stations` (
   `mac` char(8) NOT NULL COMMENT 'Gateway MAC',
   `serial` varchar(8) NOT NULL COMMENT 'Station serial #',
   `station_serial` varchar(16) NOT NULL DEFAULT '7FFF000000000000',
-  `ip4` varchar(19) NOT NULL COMMENT 'Gateway IP',
+  `ip4` char(15) NOT NULL COMMENT 'Gateway IP',
   `wug_id` varchar(12) DEFAULT NULL COMMENT 'Weather Underground Station ID',
   `wug_sec` varchar(12) DEFAULT NULL COMMENT 'Weather Underground security',
-  `last_hist_addr` varchar(4) NOT NULL,
+  `last_hist_addr` char(4) NOT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB  DEFAULT CHARSET=latin1 COMMENT='Weather Station identification' AUTO_INCREMENT=57 ;
 
