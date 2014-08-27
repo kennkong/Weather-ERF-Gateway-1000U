@@ -3,7 +3,6 @@
 $stationid = @$_GET['stationid'];
 if (!isset($stationid)) $stationid = 55;
 
-file_put_contents('wsdata.log', "stationid is ".print_r($stationid, true)."\n", FILE_APPEND);
 try {
 	$wdb = new PDO('mysql:dbname=weather');
 	$wdb->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
@@ -194,8 +193,8 @@ break;
 
 case 7: {// Station List
 	print json_encode($wdb->query("
-	SELECT id, description FROM stations ORDER BY id
-	")->fetchAll(PDO::FETCH_NUM), JSON_NUMERIC_CHECK);
+	SELECT * FROM stations
+	")->fetchAll(PDO::FETCH_ASSOC));
 }
 break;
 endswitch;

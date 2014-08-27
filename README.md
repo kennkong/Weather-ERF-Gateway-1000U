@@ -8,7 +8,7 @@ Lacross Technologies C84612 Weather Station
 using the GW1000U ERF-100 Gateway
 I'm running my webserver on a Synology Diskstation DS410j. Some of
 the PHP in request.breq may need to be modified to work on yours.
-I had to modify keckec's original code to get mine working.
+I had to modify mycal and keckec's original code to get mine working.
 
 You can see a discussion about how this was created here:
 http://www.wxforum.net/index.php?topic=14299
@@ -43,6 +43,12 @@ DBG_LVL: OF_DBG must be set for this to send ouput to the wstation.log file
     0: only critical errors
     1: packet activity, useful to confirm that it's working
     2: detail, useful for debugging but fills the log fast
+
+In the configuration branch of this repository, I have moved the above flags,
+plus the ping, sensor and history intervals, into the stations table.
+I have created wsconfig.html and wsconfig.php to read and modify these settings.
+However, the output flags still need to be set at the beginning of request.breq,
+because they are used before the values are retrieved from the database.
 
 You will need to get the station serial number by sniffing packets
 coming from Lacrosse. You can use the output flags to help with this.

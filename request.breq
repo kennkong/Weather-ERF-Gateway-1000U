@@ -2,9 +2,9 @@
 error_reporting(E_ALL);
 //----------------------------------------------------------------------------------------------------------
 // Configuration, customize for your situation
+// This will all be over-written below, for documentation now
 //----------------------------------------------------------------------------------------------------------
 date_default_timezone_set('America/New_York');   // We use this to set the correct time on your weather station
-$station_serial=pack("H*" , "7fff7c1658f0be55");    // Set your station serial number here
 $ping_interval = 300; //How often gateway reports (in seconds) (set in 00:70 reply)
 $sensor_interval = chr(4); // Minutes between packets - 1
 $history_interval = chr(0x03);
@@ -20,14 +20,14 @@ $history_interval = chr(0x03);
 //   0x07 -- 2 hours (changes every even hour, local time)
 */
 
-// Output flags													
+// Output flags	will be overwritten, but must be set here first												
 const OF_RTG = 0x01; // Reply to gateway
 const OF_WDB = 0x02; // Write to database
 const OF_DBG = 0x04; // Write to wstation.log file
 const OF_WUG = 0x08; // Send to Weather Underground
 const OF_LAC = 0x10; // Send to Lacrosse server
 const OF_RES = 0x30; // Send Lacrosse response instead (forces OF_LAC)
-const DBG_LVL = 1;
+$DBG_LVL = 1;
 $OF = OF_RTG | OF_WDB | OF_DBG | OF_WUG;
 
 function checksum8($buffer) { // Simple 8 bit checksum
@@ -88,8 +88,8 @@ function heatindex($t, $rh) { // T in deg F
 	return round($hi,1);
 }
 function updatelog($message, $level = 1) { // Write to wstation.log
-	global $OF;
-	if ($level > DBG_LVL || !($OF & OF_DBG)) return;
+	global $OF, $DBG_LVL;
+if ($level > $DBG_LVL || !($OF & OF_DBG)) return;
 	file_put_contents('wstation.log', $message, FILE_APPEND);
 }
 function wdb() { // Create database connection
@@ -104,31 +104,15 @@ function wdb() { // Create database connection
 	return true;
 
 }
-function getstation($mac) {
-	global $wdb, $station;
-	if (!isset($wdb)) if (!wdb()) return false;
-	try {
-		$pds = $wdb->query("SELECT * FROM `stations` WHERE `mac` = '$mac'");
-	} catch (PDOException $e) {
-		updatelog("Failed to get station info ".$e->getMessage()."\n", 0);
-		return false;
-	}
-	if (!$station = $pds->fetch(PDO::FETCH_ASSOC)) return false;
-	$pds->closeCursor();
-	return true;
-}
 function updatepkt($packettype) { // Saves packet data, returns packet id
 	global $wdb, $id1, $id2, $postdata, $stationid;
 	if (!isset($wdb)) if (!wdb()) return null;
 	
-	$http_id_short = $id1.':'.$id2;
-
-	// INSERT INTO packets stationid, timestamp, packettype values(55,now(),2);
-	$sql = 'INSERT INTO `packets` (`stationid`, `timestamp`, `packettype`)'
-		." VALUES($stationid, NOW(), $packettype)";
-	//updatelog($sql."\n", 2);
 	try {
-		$wdb->exec($sql);
+		$wdb->exec("INSERT INTO `packets`
+		SET `stationid` = $stationid,
+		`timestamp` = NOW(),
+		`packettype` = $packettype");
 	} catch (PDOException $e) {
 		updatelog("Insert packet: ".$e->getMessage(), 0);
 		return null;
@@ -151,10 +135,13 @@ function updatepkt($packettype) { // Saves packet data, returns packet id
 	// We already have the data for the history packets
 	if ($packettype == 9) return $pid;
 	
-	$sql = 'INSERT INTO `packetdump` (pid, http_id, payload, packettype)'
-		.' VALUES(?, ?, ?, ?)';
+	$http_id_short = $id1.':'.$id2;
+
 	try {
-		$pds = $wdb->prepare($sql);
+		$pds = $wdb->prepare('
+			INSERT INTO `packetdump` (pid, http_id, payload, packettype)
+			VALUES(?, ?, ?, ?)
+			');
 		$pds->bindParam(1, $pid, PDO::PARAM_INT);
 		$pds->bindParam(2, $http_id_short);
 		$pds->bindParam(3, $postdata);
@@ -221,7 +208,7 @@ function fixuprain($pid) { // Fix up weekly and monthly rainfall to be running t
 }
 function prev_days_rain($days) {
 	global $wdb, $stationid;
-	// Get previous week's rain total
+	// Get previous days' rain total
 	$sql = "SELECT P.id, SV.value
 		 FROM packets P JOIN sensorvalues SV ON P.id = SV.id
 		 WHERE P.timestamp < DATE_SUB(NOW(), INTERVAL $days DAY)
@@ -257,11 +244,12 @@ function updatesdp() { // Update weather database with sensor data
 
 	fixuprain($pid);
 	
-	$sql = 'INSERT INTO `sensorvalues` (id, sid, value)'
-		.' VALUES (?, ?, ?)';
 	// Trigger will update the records table
 	try {
-		$pds = $wdb->prepare($sql);
+		$pds = $wdb->prepare('
+			INSERT INTO `sensorvalues` (id, sid, value)
+			VALUES (?, ?, ?)
+			');
 		$pds->bindParam(1, $pid, PDO::PARAM_INT);
 		$pds->bindParam(2, $sid, PDO::PARAM_INT);
 		$pds->bindParam(3, $value);
@@ -295,10 +283,9 @@ function updatesdp() { // Update weather database with sensor data
 	}
 	$pds->closeCursor();
 	
-	$wdb = null;
 }
 function updatehis() { // Update weather database with history data
-	global $wdb, $postdata, $OF, $stationid;
+	global $wdb, $postdata, $stationid;
 	if (!isset($wdb)) if (!wdb()) return;
 	$pid = updatepkt(8);
 	if (!isset($pid)) return;
@@ -356,19 +343,19 @@ function updatehis() { // Update weather database with history data
 		// The packetdump packet is deleted by the foreign key constraint
 		$sql = "DELETE FROM packets WHERE id = $pid";
 		try {
-			$rows = $wdb->exec($sql);
+			$rows = $wdb->exec("DELETE FROM packets WHERE id = $pid");
 		} catch (PDOException $e) {
-			$sql.="\nFAILED ".$e->getMessage();
+			updatelog("Delete packet $pid failed: ".$e->getMessage()."\n",0);
 		}
-		updatelog($sql." $rows rows deleted\n", 2);
+		if ($rows == 1) updatelog("Packet $pid deleted.\n", 2);
+		else updatelog("$rows deleted for packet $pid\n", 0);
 	}
-}
-function set_last_hist_addr($last_hist_addr) { // Last memory location of history record
-	global $wdb, $stationid;
-	if (!isset($wdb)) if (!wdb()) return;
 	try {
-		$wdb->exec("UPDATE `stations` SET last_hist_addr = '$last_hist_addr'
-		WHERE id = $stationid");
+		$wdb->exec(
+			"UPDATE `stations` SET last_hist_addr = '"
+			.bin2hex(substr($postdata, 4, 2))."'
+			WHERE id = $stationid
+			");
 	} catch (PDOException $e) {
 		updatelog("Failed to update last history address: ".$e->getMessage()."\n",0);
 	}
@@ -460,24 +447,39 @@ $postdata = file_get_contents("php://input");
 $headers = apache_request_headers();
 updatelog(print_r($_SERVER, true), 2);
 // Get the Identify
-$http_id=@$headers["HTTP_IDENTIFY"];
-if ($http_id) {
-	list($mac, $id1, $key, $id2) = explode(":", $http_id);
-	// Reject packets from other stations
-	if (getstation($mac)) {
-		$stationid = $station['id'];
-		$station_serial = pack('H*', $station['station_serial']);
-	} else {
-		updatelog("Unknown station $http_id\n", 0);
-		exit;
-	}
-} else {
-	$id1="XX"; $id2="XX"; $reply="<html><body>Couldn't stand the weather!</body></html>";
+if (!$http_id=@$headers["HTTP_IDENTIFY"]) {
+	updatelog("No HTTP_IDENTIFY\n", 0);
+	exit;
 }
+list($mac, $id1, $key, $id2) = explode(":", $http_id);
+// Reject packets from other stations
+if (!isset($wdb)) if (!wdb()) exit;
+try {
+	$station = $wdb->query("SELECT * FROM `stations` WHERE `mac` = '$mac'")->fetch(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+	updatelog("Failed to get station info ".$e->getMessage()."\n", 0);
+	exit;
+}
+if (!$station) {
+	updatelog("Unknown station $http_id\n", 0);
+	exit;
+}
+// Set configuration
+$stationid = $station['id'];
+$station_serial = pack('H*', $station['station_serial']);
+if (!date_default_timezone_set($station['timezone'])) date_default_timezone_set('UTC');   // We use this to set the correct time on your weather station
+$ping_interval = (int) $station['ping_interval']; //How often gateway reports (in seconds) (set in 00:70 reply)
+$sensor_interval = (int) $station['sensor_interval']; // Minutes between packets - 1
+$history_interval = (int) $station['history_interval'];
+//file_put_contents('wstation.log', "OF ".ord($OF)."\n", FILE_APPEND);
 
+$OF = (int) $station['output_flags'];
+$DBG_LVL = (int) $station['debug_level'];
+/*
+*/
 
 // Exclude packets from log here
-switch ($id1.":".$id2) :
+switch ($id1.":".$id2) {
 	case "01:01": 
 		if (strlen($postdata) == 197) break; //Comment out to skip SDP
 		if (strlen($postdata) != 197) break; //Comment out to skip history
@@ -485,7 +487,7 @@ switch ($id1.":".$id2) :
 	//case "01:00":
 	//case "00:70": 
 		$OF &= ~OF_DBG;
-endswitch;
+} //endswitch;
 // Log it
 updatelog(date("Y-m-d H:i:s")." $http_id"
 	. ((strlen($postdata) == 0) ? "\n" : 
@@ -496,7 +498,7 @@ updatelog(date("Y-m-d H:i:s")." $http_id"
 // Check request and do the appropriate reply
 //
 $http_flags='00:00';
-switch ($id1.":".$id2) :
+switch ($id1.":".$id2) {
 	case "00:10":	{ // Power Up Packet for unregistered gateway (00:01)
 		// Ww should use this to notify user server configuration is OK
 
@@ -525,9 +527,9 @@ switch ($id1.":".$id2) :
 		// We retply with 20:00 and config:
 		// 1st 8 b
 		$new_key=str_pad("", 8, chr(0));       // This is used to generate new key
-																				// no idea on transform, so use zeros, if everyone
-																				// uses zeros, maybe we can collect enough data
-																				// to figure out transform.
+												// no idea on transform, so use zeros, if everyone
+												// uses zeros, maybe we can collect enough data
+												// to figure out transform.
 		$new_server=str_pad($weather_server, 0x98 , chr(0));                    // Length 0x98
 		$new_server2=str_pad($weather_server.chr(0).$weather_server,0x56, chr(0)); // set the weather server, doesn't seem to matter
 		$end=chr(0).chr(0).chr(0).chr(0).chr(0).chr(0xff);
@@ -760,7 +762,7 @@ switch ($id1.":".$id2) :
 			} else {
 				if (0 == ((strlen($postdata) - 12) % 18)) { // History packet?
 					updatehis();
-					set_last_hist_addr(bin2hex(substr($postdata, 4, 2)));
+					//set_last_hist_addr(bin2hex(substr($postdata, 4, 2)));
 				}
 			}
 	 
@@ -775,8 +777,9 @@ switch ($id1.":".$id2) :
 		// Reply with 00:00 no data
 		$http_flags='00:00';
 		$reply="";
-endswitch;
+}//endswitch;
 
+$wdb = null;
 
 //-----------------------------
 //All output created here
