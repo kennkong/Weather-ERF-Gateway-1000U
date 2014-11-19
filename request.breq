@@ -755,7 +755,9 @@ switch ($id1.":".$id2) {
 				"checksum" => substr($posthex, 390, 4), // Checksum?
 				"dewpoint" => C2F(dewpoint(hex2degC(substr($posthex, 75, 3)), bcd2int($postdata[83]))), // Must be calculated
 				];
-				$sdp['cur_wind_chill'] = heatindex($sdp['cur_out_temp'], $sdp['cur_out_hum']);
+				// Use wind chill for heat index, stored in feels_like (sensorid 14)
+				if ($sdp['cur_out_temp'] >= 80)
+					$sdp['cur_wind_chill'] = heatindex($sdp['cur_out_temp'], $sdp['cur_out_hum']);
 				updatelog(print_r($sdp, true), 2);
 				if ($OF & OF_WDB) updatesdp();
 				if ($OF & OF_WUG) updatewug($sdp);

@@ -10,6 +10,11 @@ I'm running my webserver on a Synology Diskstation DS410j. Some of
 the PHP in request.breq may need to be modified to work on yours.
 I had to modify mycal and keckec's original code to get mine working.
 
+You have to get your web server to process the request.breq file as php.
+On my Synology Diskstation, I modified /etc/httpd/conf/extra/mod_fastcgi.conf
+by adding .breq to the AddHandler list, and adding .breq to security.limit_extensions
+in /etc/php/php-fpm.conf.
+
 You can see a discussion about how this was created here:
 http://www.wxforum.net/index.php?topic=14299
 
